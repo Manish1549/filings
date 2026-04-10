@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Filings</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:#fff;color:#111;font-size:14px;line-height:1.5}
+
+  /* Layout */
+  .sidebar{position:fixed;top:0;left:0;width:224px;height:100vh;border-right:1px solid #e5e7eb;background:#fafafa;padding:24px 0;overflow-y:auto;z-index:10}
+  .main{margin-left:224px;min-height:100vh;display:flex;flex-direction:column}
+  .topbar{padding:18px 32px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;background:#fff;position:sticky;top:0;z-index:5}
+  .content{padding:28px 32px;flex:1}
+
+  /* Sidebar */
+  .logo{padding:0 20px 20px;font-size:15px;font-weight:600;letter-spacing:-0.3px;display:flex;align-items:center;gap:8px}
+  .logo-dot{width:10px;height:10px;border-radius:50%;background:#111}
+  .logo span{color:#9ca3af;font-weight:400}
+  .nav-section{padding:0 12px;margin-bottom:6px}
+  .nav-label{font-size:10px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;padding:0 8px;margin-bottom:4px;margin-top:4px}
+  .nav-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:6px;cursor:pointer;color:#374151;transition:background 0.1s;font-size:13px;user-select:none}
+  .nav-item:hover{background:#f3f4f6}
+  .nav-item.active{background:#f0f0f0;font-weight:500;color:#111}
+  .nav-flag{font-size:14px;line-height:1}
+  .nav-divider{height:1px;background:#e5e7eb;margin:10px 16px}
+  .nav-sub{padding-left:8px;font-size:12px;color:#9ca3af}
+
+  /* Topbar */
+  .page-title{font-size:15px;font-weight:600}
+  .breadcrumb{font-size:12px;color:#9ca3af;margin-top:1px}
+  .status-pill{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid #e5e7eb;color:#6b7280;background:#fafafa}
+
+  /* Company info card (EDGAR) */
+  .company-card{border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:20px;display:flex;gap:32px;flex-wrap:wrap;background:#fafafa;display:none}
+  .company-card.visible{display:flex}
+  .co-field{display:flex;flex-direction:column;gap:2px}
+  .co-label{font-size:11px;color:#9ca3af;font-weight:500;text-transform:uppercase;letter-spacing:0.4px}
+  .co-value{font-size:13px;font-weight:500;color:#111}
+
+  /* Search */
+  .search-section{border:1px solid #e5e7eb;border-radius:10px;padding:18px 20px;margin-bottom:22px}
+  .search-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .field-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px}
+  .field-group label{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.4px}
+  .field-group input,.field-group select{height:36px;padding:0 11px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#111;background:#fff;outline:none;width:100%;font-family:'Inter',sans-serif}
+  .field-group input:focus,.field-group select:focus{border-color:#9ca3af}
+  .btn{height:36px;padding:0 18px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:#111;color:#fff;font-family:'Inter',sans-serif;transition:opacity 0.15s;white-space:nowrap}
+  .btn:hover{opacity:0.82}
+  .btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb}
+  .btn-ghost:hover{background:#f9fafb;opacity:1}
+
+  /* Stats */
+  .stats-row{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+  .stat-card{background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:13px 18px;flex:1;min-width:110px}
+  .stat-val{font-size:21px;font-weight:600;margin-bottom:1px}
+  .stat-lbl{font-size:11px;color:#9ca3af}
+
+  /* Table */
+  .table-wrap{border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+  .table-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e5e7eb;background:#fafafa}
+  .table-header-title{font-size:13px;font-weight:500}
+  table{width:100%;border-collapse:collapse}
+  thead tr{border-bottom:1px solid #e5e7eb}
+  th{padding:9px 13px;text-align:left;font-size:10px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}
+  tbody tr{border-bottom:1px solid #f3f4f6;transition:background 0.1s}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:#fafafa}
+  td{padding:11px 13px;font-size:13px;vertical-align:middle}
+  .td-title{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .td-company{color:#6b7280;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .td-date{color:#9ca3af;white-space:nowrap;font-size:12px}
+
+  /* Badges */
+  .badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+  .badge-sg{background:#fee2e2;color:#991b1b}
+  .badge-au{background:#fef3c7;color:#92400e}
+  .badge-us{background:#dbeafe;color:#1e40af}
+  .badge-type{background:#f3f4f6;color:#374151}
+  .badge-xbrl{background:#dcfce7;color:#166534}
+  .badge-sensitive{background:#fef2f2;color:#dc2626}
+  .badge-jp{background:#fce7f3;color:#9d174d}
+  .badge-uk{background:#ede9fe;color:#5b21b6}
+
+  /* Actions */
+  .action-btn{padding:4px 10px;border-radius:5px;border:1px solid #e5e7eb;background:#fff;font-size:12px;cursor:pointer;color:#374151;font-family:'Inter',sans-serif;transition:background 0.1s;white-space:nowrap}
+  .action-btn:hover{background:#f3f4f6}
+
+  /* Empty / loading */
+  .empty-state{text-align:center;padding:56px 20px;color:#9ca3af}
+  .empty-icon{font-size:28px;margin-bottom:10px}
+  .empty-title{font-size:14px;font-weight:500;color:#6b7280;margin-bottom:3px}
+  .empty-sub{font-size:12px}
+  .loading-row td{text-align:center;padding:40px;color:#9ca3af}
+
+  /* Pagination */
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-top:1px solid #e5e7eb}
+  .pagination-info{font-size:12px;color:#9ca3af}
+  .pagination-btns{display:flex;gap:6px}
+  .page-btn{padding:5px 12px;border:1px solid #e5e7eb;border-radius:5px;background:#fff;font-size:12px;cursor:pointer;color:#374151;font-family:'Inter',sans-serif}
+  .page-btn:hover{background:#f3f4f6}
+  .page-btn:disabled{opacity:0.35;cursor:not-allowed}
+
+  /* API panel */
+  .api-panel{background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;padding:18px 20px;margin-top:22px}
+  .api-panel h3{font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
+  .api-endpoint{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+  .method{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;letter-spacing:0.3px}
+  .endpoint-url{font-family:monospace;font-size:12px;color:#374151;background:#fff;border:1px solid #e5e7eb;padding:3px 9px;border-radius:4px}
+  .ep-desc{font-size:11px;color:#9ca3af}
+
+  /* Toast */
+  .toast{position:fixed;bottom:22px;right:22px;background:#111;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;transform:translateY(80px);opacity:0;transition:all 0.25s;z-index:100}
+  .toast.show{transform:translateY(0);opacity:1}
+
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid #e5e7eb;border-top-color:#6b7280;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="logo"><div class="logo-dot"></div>Filings <span>/ Global</span></div>
+
+  <div class="nav-section">
+    <div class="nav-label">Markets</div>
+    <div class="nav-item active" id="nav-sgx" onclick="switchMarket('sgx')">
+      <span class="nav-flag">🇸🇬</span> SGX · Singapore
+    </div>
+    <div class="nav-item" id="nav-asx" onclick="switchMarket('asx')">
+      <span class="nav-flag">🇦🇺</span> ASX · Australia
+    </div>
+    <div class="nav-item" id="nav-edgar" onclick="switchMarket('edgar')">
+      <span class="nav-flag">🇺🇸</span> EDGAR · United States
+    </div>
+    <div class="nav-item" id="nav-edinet" onclick="switchMarket('edinet')">
+      <span class="nav-flag">🇯🇵</span> EDINET · Japan
+    </div>
+    <div class="nav-item" id="nav-fca" onclick="switchMarket('fca')">
+      <span class="nav-flag">🇬🇧</span> FCA NSM · UK
+    </div>
+  </div>
+
+  <div class="nav-divider"></div>
+
+  <div class="nav-section">
+    <div class="nav-label">Developers</div>
+    <div class="nav-item" onclick="window.open('/docs','_blank')">Swagger UI ↗</div>
+    <div class="nav-item" onclick="window.open('/redoc','_blank')">ReDoc ↗</div>
+    <div class="nav-item" onclick="window.open('/health','_blank')">Health check ↗</div>
+  </div>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="page-title" id="page-title">SGX — Singapore Exchange</div>
+      <div class="breadcrumb" id="page-sub">Company announcements · v1.1 API · api.sgx.com</div>
+    </div>
+    <span class="status-pill">● Live</span>
+  </div>
+
+  <div class="content">
+
+    <!-- Search bar -->
+    <div class="search-section">
+      <div class="search-row">
+        <div class="field-group" style="flex:2">
+          <label id="search-label">Company name</label>
+          <input id="search-input" placeholder="e.g. DBS GROUP, SINGTEL" onkeydown="if(event.key==='Enter')doSearch()"/>
+        </div>
+        <div class="field-group" id="field-category">
+          <label id="category-label">Category</label>
+          <select id="category-select"><option value="">All categories</option></select>
+        </div>
+        <div class="field-group" style="max-width:128px" id="field-from">
+          <label>From date</label>
+          <input type="date" id="date-from"/>
+        </div>
+        <div class="field-group" style="max-width:128px" id="field-to">
+          <label>To date</label>
+          <input type="date" id="date-to"/>
+        </div>
+        <button class="btn" onclick="doSearch()">Search</button>
+        <button class="btn btn-ghost" onclick="clearSearch()">Clear</button>
+      </div>
+    </div>
+
+    <!-- Company card (EDGAR only) -->
+    <div class="company-card" id="company-card">
+      <div class="co-field"><div class="co-label">Company</div><div class="co-value" id="co-name">—</div></div>
+      <div class="co-field"><div class="co-label">CIK</div><div class="co-value" id="co-cik">—</div></div>
+      <div class="co-field"><div class="co-label">Ticker</div><div class="co-value" id="co-ticker">—</div></div>
+      <div class="co-field"><div class="co-label">SIC</div><div class="co-value" id="co-sic">—</div></div>
+      <div class="co-field"><div class="co-label">State</div><div class="co-value" id="co-state">—</div></div>
+      <div class="co-field"><div class="co-label">Fiscal year end</div><div class="co-value" id="co-fye">—</div></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-val" id="stat-total">—</div><div class="stat-lbl">Total filings</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-companies">—</div><div class="stat-lbl" id="stat-lbl-2">Companies</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-categories">—</div><div class="stat-lbl">Categories</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-extra">—</div><div class="stat-lbl" id="stat-lbl-extra">Other</div></div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <div class="table-header">
+        <span class="table-header-title" id="table-title">Filings</span>
+        <button class="action-btn" onclick="exportCSV()">Export CSV</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr id="table-head"></tr></thead>
+          <tbody id="table-body">
+            <tr><td colspan="8" class="loading-row">Select a market and enter a search query</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span class="pagination-info" id="pagination-info"></span>
+        <div class="pagination-btns">
+          <button class="page-btn" id="btn-prev" onclick="changePage(-1)" disabled>← Prev</button>
+          <button class="page-btn" id="btn-next" onclick="changePage(1)" disabled>Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- API reference -->
+    <div class="api-panel">
+      <h3>API Reference</h3>
+      <div id="api-endpoints"></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PAGE_SIZE = 20;
+let currentMarket = 'sgx';
+let currentPage   = 0;
+let allFilings    = [];
+let totalFilings  = 0;
+
+// ── Market configs ────────────────────────────────────────────────────────────
+const MARKETS = {
+
+  sgx: {
+    title: 'SGX — Singapore Exchange',
+    sub: 'Company announcements · v1.1 API · api.sgx.com',
+    searchLabel: 'Company name',
+    searchPlaceholder: 'e.g. DBS GROUP, SINGTEL, CAPITALAND — leave empty to browse by category',
+    categoryLabel: 'Category',
+    categoriesUrl: '/api/sgx/categories',
+    categoryValueKey: 'code',
+    showDates: true,
+    columns: ['Date','Company','Title','Category','Subcategory','Stock code','Actions'],
+    searchUrl(q, cat, from, to, page) {
+      const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      if (q)    p.set('company', q);
+      if (cat)  p.set('cat', cat);
+      if (from) p.set('from_date', from.replaceAll('-',''));
+      if (to)   p.set('to_date', to.replaceAll('-',''));
+      return `/api/sgx/filings?${p}`;
+    },
+    renderRow(f) {
+      const stocks = (f.issuers||[]).map(i=>i.stock_code).filter(Boolean).join(', ') || '—';
+      const ps     = f.is_price_sensitive ? ' <span class="badge badge-sensitive" style="font-size:10px">PS</span>' : '';
+      const pdfBtn = f.url
+        ? `<button class="action-btn" onclick="window.open('${f.url}','_blank')">View ↗</button>`
+        : '—';
+      return `
+        <td class="td-date">${f.submission_date||f.broadcast_date_time||''}</td>
+        <td class="td-company" title="${f.issuer_name||''}">${f.issuer_name||'—'}${ps}</td>
+        <td class="td-title" title="${f.title||''}">${f.title||'—'}</td>
+        <td><span class="badge badge-type">${f.category_name||f.cat||'—'}</span></td>
+        <td style="font-size:12px;color:#9ca3af">${f.sub||'—'}</td>
+        <td><span class="badge badge-sg">${stocks}</span></td>
+        <td>${pdfBtn}</td>`;
+    },
+    statsKey(filings) {
+      return {
+        total: totalFilings,
+        companies: new Set(filings.map(f=>f.issuer_name).filter(Boolean)).size,
+        categories: new Set(filings.map(f=>f.cat).filter(Boolean)).size,
+        extra: filings.filter(f=>f.url).length,
+        extraLabel: 'With PDF',
+        compLabel: 'Companies (page)',
+      };
+    },
+    csvRow(f) {
+      const stocks = (f.issuers||[]).map(i=>i.stock_code).filter(Boolean).join(';');
+      return [f.submission_date||'', esc(f.issuer_name), esc(f.title), f.cat||'', f.sub||'', stocks, f.url||''].join(',');
+    },
+    apiEndpoints: [
+      {url:'/api/sgx/filings?company=DBS+GROUP&page=0&page_size=20', desc:'Filings by company name'},
+      {url:'/api/sgx/filings?cat=FINSTMT&from_date=20260101',        desc:'Financial statements YTD'},
+      {url:'/api/sgx/filings?cat=DIV&from_date=20260101',            desc:'Dividends YTD'},
+      {url:'/api/sgx/count?from_date=20060410',                      desc:'Total all-time count (816K+)'},
+      {url:'/api/sgx/filings/all?cat=DIV&from_date=20260101',        desc:'All dividends YTD (auto-paginated)'},
+      {url:'/api/sgx/categories',                                     desc:'4-group category list'},
+      {url:'/api/sgx/companies?q=DBS',                               desc:'Company search'},
+      {url:'/api/sgx/securities',                                     desc:'Securities list'},
+    ],
+  },
+
+  asx: {
+    title: 'ASX — Australian Securities Exchange',
+    sub: 'Company announcements · Markitdigital API',
+    searchLabel: 'ASX symbol',
+    searchPlaceholder: 'e.g. BHP, CBA, ELS — leave empty for market-wide feed',
+    categoryLabel: 'Announcement type',
+    categoriesUrl: '/api/asx/categories',
+    categoryValueKey: 'heading_id',
+    showDates: true,
+    columns: ['Date','Symbol','Company','Headline','Type','Sensitive','Actions'],
+    searchUrl(q, cat, from, to, page) {
+      const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      if (cat)  p.set('heading_id', cat);
+      if (from) p.set('from_date', from);
+      if (to)   p.set('to_date', to);
+      if (!q)   return `/api/asx/market?${p}`;
+      return `/api/asx/filings/${q.toUpperCase().trim()}?${p}`;
+    },
+    renderRow(f) {
+      const types = (f.announcement_types||[]).join(', ') || '—';
+      const sens  = f.is_price_sensitive
+        ? `<span class="badge badge-sensitive">PS</span>`
+        : `<span style="font-size:11px;color:#9ca3af">—</span>`;
+      return `
+        <td class="td-date">${f.date||''}</td>
+        <td><span class="badge badge-au">${f.symbol||''}</span></td>
+        <td class="td-company">${f.company_name||'—'}</td>
+        <td class="td-title" title="${f.headline||''}">${f.headline||'—'}</td>
+        <td><span class="badge badge-type">${types}</span></td>
+        <td>${sens}</td>
+        <td><button class="action-btn" onclick="window.open('${f.pdf_url}','_blank')">PDF ↗</button></td>`;
+    },
+    statsKey(filings) {
+      return {
+        total: totalFilings,
+        companies: new Set(filings.map(f=>f.symbol).filter(Boolean)).size,
+        categories: new Set(filings.flatMap(f=>f.announcement_types||[])).size,
+        extra: filings.filter(f=>f.is_price_sensitive).length,
+        extraLabel: 'Price sensitive',
+        compLabel: 'Symbols (page)',
+      };
+    },
+    csvRow(f) {
+      return [f.date||'', f.symbol||'', esc(f.company_name), esc(f.headline), esc((f.announcement_types||[]).join(';')), f.is_price_sensitive, f.pdf_url||''].join(',');
+    },
+    apiEndpoints: [
+      {url:'/api/asx/filings/BHP',                                        desc:'All BHP filings (paginated)'},
+      {url:'/api/asx/filings/BHP?heading_id=7',                           desc:'BHP Annual Reports only'},
+      {url:'/api/asx/filings/CBA?from_date=2024-01-01&price_sensitive=true', desc:'CBA price-sensitive 2024+'},
+      {url:'/api/asx/filings/BHP/all?heading_id=7',                       desc:'All BHP Annual Reports (auto-paginated)'},
+      {url:'/api/asx/market?from_date=2026-04-01&price_sensitive=true',   desc:'Market-wide price-sensitive'},
+      {url:'/api/asx/market/all?from_date=2026-04-11',                    desc:"Today's all announcements"},
+      {url:'/api/asx/categories?from_date=2026-01-01',                    desc:'Live category counts YTD'},
+      {url:'/api/asx/companies?q=BHP',                                    desc:'Company search'},
+    ],
+  },
+
+  edgar: {
+    title: 'EDGAR — US Securities and Exchange Commission',
+    sub: 'SEC filings · data.sec.gov · Free, no API key',
+    searchLabel: 'Ticker or CIK',
+    searchPlaceholder: 'e.g. AAPL, TSLA, MSFT, 0000320193',
+    categoryLabel: 'Form type',
+    categoriesUrl: '/api/edgar/form-types',
+    categoryValueKey: 'form',
+    showDates: true,
+    columns: ['Filing date','Report date','Company','Form','Category','XBRL','Actions'],
+    searchUrl(q, cat, from, to, page) {
+      if (!q) return null;
+      const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      if (cat)  p.set('form_type', cat);
+      return `/api/edgar/filings/${q.trim().toUpperCase()}?${p}`;
+    },
+    renderRow(f) {
+      const xbrl = f.is_xbrl || f.is_inline_xbrl
+        ? `<span class="badge badge-xbrl">XBRL</span>`
+        : `<span style="font-size:11px;color:#9ca3af">—</span>`;
+      const viewBtn = f.document_url
+        ? `<button class="action-btn" onclick="window.open('${f.document_url}','_blank')">View ↗</button>`
+        : '';
+      const idxBtn  = f.index_url
+        ? `<button class="action-btn" onclick="window.open('${f.index_url}','_blank')">Index</button>`
+        : '';
+      return `
+        <td class="td-date">${f.filing_date||''}</td>
+        <td class="td-date">${f.report_date||'—'}</td>
+        <td class="td-company" title="${f.company_name||''}">${f.company_name||'—'}</td>
+        <td><span class="badge badge-us">${f.form_type||'—'}</span></td>
+        <td><span class="badge badge-type">${f.category||'—'}</span></td>
+        <td>${xbrl}</td>
+        <td style="display:flex;gap:5px">${viewBtn}${idxBtn}</td>`;
+    },
+    statsKey(filings) {
+      return {
+        total: filings.length,
+        companies: new Set(filings.map(f=>f.company_name).filter(Boolean)).size,
+        categories: new Set(filings.map(f=>f.form_type).filter(Boolean)).size,
+        extra: filings.filter(f=>f.is_xbrl||f.is_inline_xbrl).length,
+        extraLabel: 'XBRL tagged',
+        compLabel: 'Entities',
+      };
+    },
+    csvRow(f) {
+      return [f.filing_date||'', f.report_date||'', esc(f.company_name), f.form_type||'', f.category||'', f.accession_number||'', f.is_xbrl||false, f.document_url||''].join(',');
+    },
+    apiEndpoints: [
+      {url:'/api/edgar/filings/AAPL',                    desc:'All filings for Apple'},
+      {url:'/api/edgar/filings/TSLA?form_type=10-K',     desc:'Annual reports only'},
+      {url:'/api/edgar/filings/MSFT?form_type=8-K',      desc:'Current reports'},
+      {url:'/api/edgar/company/AAPL',                    desc:'Company metadata + CIK'},
+      {url:'/api/edgar/search?q=Tesla&form_type=10-K',   desc:'Full-text search'},
+      {url:'/api/edgar/form-types',                      desc:'All SEC form types'},
+    ],
+  },
+
+  edinet: {
+    title: 'EDINET — Japan Financial Services Agency',
+    sub: 'Securities filings · api.edinet-fsa.go.jp · Free API key required',
+    searchLabel: 'Date',
+    searchPlaceholder: 'YYYY-MM-DD (e.g. 2026-03-30)',
+    categoryLabel: 'Document type',
+    categoriesUrl: '/api/edinet/doc-types',
+    categoryValueKey: 'code',
+    showDates: false,
+    columns: ['Submitted','Company','Securities code','Document type','Period','XBRL','PDF','Actions'],
+    searchUrl(q, cat, from, to, page) {
+      const target = q.trim() || new Date().toISOString().split('T')[0];
+      const p = new URLSearchParams({ date: target });
+      if (cat) p.set('doc_type', cat);
+      return `/api/edinet/filings?${p}`;
+    },
+    renderRow(f) {
+      const xbrl = f.has_xbrl ? `<span class="badge badge-xbrl">XBRL</span>` : `<span style="font-size:11px;color:#9ca3af">—</span>`;
+      const pdf  = f.has_pdf  ? `<span class="badge badge-jp">PDF</span>`  : `<span style="font-size:11px;color:#9ca3af">—</span>`;
+      const eng  = f.has_english ? ' <span class="badge badge-us" style="font-size:10px">EN</span>' : '';
+      const viewBtn = f.viewer_url
+        ? `<button class="action-btn" onclick="window.open('${f.viewer_url}','_blank')">View ↗</button>`
+        : '';
+      const dlBtn = f.pdf_url
+        ? `<button class="action-btn" onclick="window.open('${f.pdf_url}','_blank')">DL</button>`
+        : '';
+      const period = f.period_end ? f.period_end.slice(0,10) : (f.period_start ? f.period_start.slice(0,10) : '—');
+      return `
+        <td class="td-date">${(f.submit_datetime||'').slice(0,16)}</td>
+        <td class="td-company" title="${f.filer_name||''}">${f.filer_name||'—'}${eng}</td>
+        <td style="font-size:12px;color:#6b7280">${f.sec_code||'—'}</td>
+        <td><span class="badge badge-type">${f.doc_type_label||f.doc_type_code||'—'}</span></td>
+        <td class="td-date">${period}</td>
+        <td>${xbrl}</td>
+        <td>${pdf}</td>
+        <td style="display:flex;gap:5px">${viewBtn}${dlBtn}</td>`;
+    },
+    statsKey(filings) {
+      return {
+        total: filings.length,
+        companies: new Set(filings.map(f=>f.filer_name).filter(Boolean)).size,
+        categories: new Set(filings.map(f=>f.doc_type_code).filter(Boolean)).size,
+        extra: filings.filter(f=>f.has_english).length,
+        extraLabel: 'English docs',
+        compLabel: 'Companies',
+      };
+    },
+    csvRow(f) {
+      return [(f.submit_datetime||'').slice(0,16), esc(f.filer_name), f.sec_code||'', f.edinet_code||'', f.doc_type_code||'', esc(f.doc_description), f.period_end||'', f.has_xbrl, f.has_pdf, f.viewer_url||''].join(',');
+    },
+    apiEndpoints: [
+      {url:'/api/edinet/filings?date=2026-03-30',                    desc:'All filings for a date'},
+      {url:'/api/edinet/filings?date=2026-03-30&doc_type=120',       desc:'Annual reports only'},
+      {url:'/api/edinet/filings?date=2026-03-30&company=Toyota',     desc:'Filter by company name'},
+      {url:'/api/edinet/filings?date=2026-03-30&has_english=true',   desc:'English filings only'},
+      {url:'/api/edinet/filings/range?from_date=2026-03-24&max_days=5', desc:'Date range (slow — 3s/day)'},
+      {url:'/api/edinet/status',                                      desc:'Check API key status'},
+      {url:'/api/edinet/companies?q=Toyota',                         desc:'Search company cache'},
+      {url:'/api/edinet/document/{docID}?type=4',                    desc:'Download PDF'},
+    ],
+  },
+
+  fca: {
+    title: 'FCA NSM — UK National Storage Mechanism',
+    sub: 'Regulated disclosures · api.data.fca.org.uk',
+    searchLabel: 'Company name',
+    searchPlaceholder: 'e.g. BARCLAYS, CARNIVAL PLC, HSBC',
+    categoryLabel: 'Filing type',
+    categoriesUrl: '/api/fca/categories',
+    categoryValueKey: 'code',
+    showDates: true,
+    columns: ['Submitted','Company','LEI','Headline','Category','Source','Actions'],
+    searchUrl(q, cat, from, to, page) {
+      const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      if (q)    p.set('company', q);
+      if (cat)  p.set('category', cat);
+      if (from) p.set('from_date', from);
+      if (to)   p.set('to_date', to);
+      return '/api/fca/filings?' + p;
+    },
+    renderRow(f) {
+      const src = f.source ? '<span class="badge badge-uk">' + f.source + '</span>' : '—';
+      const docBtn = f.document_url
+        ? '<button class="action-btn" onclick="window.open(\'' + f.document_url + '\',\'_blank\')">View ↗</button>'
+        : '—';
+      return '<td class="td-date">' + (f.submitted_date||'') + '</td>' +
+        '<td class="td-company" title="' + (f.company||'') + '">' + (f.company||'—') + '</td>' +
+        '<td style="font-size:11px;color:#9ca3af;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (f.lei||'—') + '</td>' +
+        '<td class="td-title" title="' + (f.headline||'') + '">' + (f.headline||'—') + '</td>' +
+        '<td><span class="badge badge-type">' + (f.category||f.type_code||'—') + '</span></td>' +
+        '<td>' + src + '</td>' +
+        '<td>' + docBtn + '</td>';
+    },
+    statsKey(filings) {
+      return {
+        total: filings.length,
+        companies: new Set(filings.map(f=>f.company).filter(Boolean)).size,
+        categories: new Set(filings.map(f=>f.type_code).filter(Boolean)).size,
+        extra: filings.filter(f=>f.source==='RNS').length,
+        extraLabel: 'RNS filings',
+        compLabel: 'Companies',
+      };
+    },
+    csvRow(f) {
+      return [f.submitted_date||'', esc(f.company), f.lei||'', esc(f.headline), f.type_code||'', f.source||'', f.document_url||''].join(',');
+    },
+    apiEndpoints: [
+      {url:'/api/fca/filings?company=BARCLAYS',                        desc:'Filings by company'},
+      {url:'/api/fca/filings?company=HSBC&type_code=AFS',              desc:'Annual reports for HSBC'},
+      {url:'/api/fca/filings?from_date=2026-03-01&to_date=2026-03-30', desc:'All filings in March'},
+      {url:'/api/fca/filings?lei=4DR1VPDQMHD3N3QW8W95',               desc:'Search by LEI'},
+      {url:'/api/fca/search?q=quarterly+results&days=30',              desc:'Full text search'},
+      {url:'/api/fca/debug',                                            desc:'Test auth + connectivity'},
+    ],
+  },
+
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s){ return `"${(s||'').replace(/"/g,'""')}"` }
+
+// ── Switch market ─────────────────────────────────────────────────────────────
+function switchMarket(market) {
+  currentMarket = market;
+  currentPage   = 0;
+  allFilings    = [];
+
+  ['sgx','asx','edgar','edinet','fca'].forEach(m => {
+    document.getElementById('nav-'+m).classList.toggle('active', m===market);
+  });
+
+  const m = MARKETS[market];
+  document.getElementById('page-title').textContent     = m.title;
+  document.getElementById('page-sub').textContent       = m.sub;
+  document.getElementById('search-label').textContent   = m.searchLabel;
+  document.getElementById('search-input').placeholder   = m.searchPlaceholder;
+  document.getElementById('search-input').value = (market === 'edinet') ? new Date().toISOString().split('T')[0] : '';
+  document.getElementById('category-label').textContent = m.categoryLabel;
+  document.getElementById('field-from').style.display   = m.showDates ? '' : 'none';
+  document.getElementById('field-to').style.display     = m.showDates ? '' : 'none';
+  document.getElementById('company-card').classList.remove('visible');
+
+  const colSpan = m.columns.length;
+  document.getElementById('table-head').innerHTML = m.columns.map(c=>`<th>${c}</th>`).join('');
+  document.getElementById('table-body').innerHTML = `<tr><td colspan="${colSpan}" class="loading-row">Enter a ${m.searchLabel.toLowerCase()} above to search</td></tr>`;
+  document.getElementById('pagination-info').textContent = '';
+  document.getElementById('btn-prev').disabled = true;
+  document.getElementById('btn-next').disabled = true;
+
+  resetStats(m);
+  loadCategories(market);
+  renderApiPanel(market);
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+async function loadCategories(market) {
+  const m   = MARKETS[market];
+  const sel = document.getElementById('category-select');
+  sel.innerHTML = `<option value="">All ${m.categoryLabel.toLowerCase()}s</option>`;
+  try {
+    const r    = await fetch(m.categoriesUrl);
+    const data = await r.json();
+
+    // SGX: grouped structure  { groups: [{group, categories:[{code,label},...]},...] }
+    if (data.groups) {
+      for (const grp of data.groups) {
+        const og = document.createElement('optgroup');
+        og.label = grp.group;
+        for (const cat of (grp.categories || [])) {
+          const o = new Option(cat.label, cat.code);
+          og.appendChild(o);
+        }
+        sel.appendChild(og);
+      }
+      return;
+    }
+
+    // Flat list — ASX, EDGAR, FCA, EDINET
+    const items = data.categories || data.form_types || data.doc_types || [];
+    for (const c of items) {
+      const val   = m.categoryValueKey ? c[m.categoryValueKey] : c;
+      const label = (c.name || c.label || c.form || String(c)) +
+                    (c.description ? ` — ${c.description}` : '');
+      sel.appendChild(new Option(label, val));
+    }
+  } catch(e) { console.warn('loadCategories failed', e); }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+async function doSearch(page) {
+  if (page === undefined) { page = 0; currentPage = 0; }
+  const m   = MARKETS[currentMarket];
+  const q   = document.getElementById('search-input').value.trim();
+  const cat = document.getElementById('category-select').value;
+  const from= document.getElementById('date-from').value;
+  const to  = document.getElementById('date-to').value;
+
+  const url = m.searchUrl(q, cat, from, to, page);
+  if (!url) { showToast('Enter a ' + m.searchLabel.toLowerCase() + ' first'); return; }
+
+  setLoading();
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail: r.statusText}));
+      throw new Error(JSON.stringify(err.detail || err));
+    }
+    const data = await r.json();
+
+    const filings = data.filings || [];
+    const total   = data.total ?? filings.length;
+    const hasMore = data.has_more ?? (data.total_pages ? (page + 1) < data.total_pages : false);
+
+    allFilings   = filings;
+    totalFilings = total;
+
+    // Show EDGAR company card
+    if (currentMarket === 'edgar' && data.company) {
+      showCompanyCard(data.company);
+    } else {
+      document.getElementById('company-card').classList.remove('visible');
+    }
+
+    renderTable(filings, total, page, hasMore);
+    updateStats(filings, m);
+  } catch(e) {
+    document.getElementById('table-body').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;padding:40px;color:#ef4444;font-size:13px">
+        Error: ${e.message}
+      </td></tr>`;
+    showToast('Request failed');
+  }
+}
+
+// ── Company card (EDGAR) ──────────────────────────────────────────────────────
+function showCompanyCard(co) {
+  document.getElementById('co-name').textContent   = co.name         || '—';
+  document.getElementById('co-cik').textContent    = co.cik          || '—';
+  document.getElementById('co-ticker').textContent = co.ticker        || '—';
+  document.getElementById('co-sic').textContent    = co.sic_description
+    ? `${co.sic} · ${co.sic_description}` : (co.sic || '—');
+  document.getElementById('co-state').textContent  = co.state        || '—';
+  document.getElementById('co-fye').textContent    = co.fiscal_year_end || '—';
+  document.getElementById('company-card').classList.add('visible');
+}
+
+// ── Render table ──────────────────────────────────────────────────────────────
+function renderTable(filings, total, page, hasMore) {
+  const m       = MARKETS[currentMarket];
+  const colSpan = m.columns.length;
+  document.getElementById('table-title').textContent = `${total.toLocaleString()} filings`;
+
+  if (!filings.length) {
+    document.getElementById('table-body').innerHTML =
+      `<tr><td colspan="${colSpan}"><div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <div class="empty-title">No filings found</div>
+        <div class="empty-sub">Try a different company name, category, or date range</div>
+      </div></td></tr>`;
+    document.getElementById('pagination-info').textContent = '';
+    document.getElementById('btn-prev').disabled = true;
+    document.getElementById('btn-next').disabled = true;
+    return;
+  }
+
+  document.getElementById('table-body').innerHTML =
+    filings.map(f => `<tr>${m.renderRow(f)}</tr>`).join('');
+
+  const start   = page * PAGE_SIZE + 1;
+  const end     = start + filings.length - 1;
+  const showEnd = total > 0 ? ` of ${total.toLocaleString()}` : '';
+  document.getElementById('pagination-info').textContent = `Showing ${start}–${end}${showEnd}`;
+  document.getElementById('btn-prev').disabled = page === 0;
+  // Use has_more if available; fall back to total comparison
+  const moreAvailable = (hasMore !== undefined) ? hasMore : (end < total);
+  document.getElementById('btn-next').disabled = !moreAvailable;
+}
+
+function changePage(dir) {
+  currentPage += dir;
+  doSearch(currentPage);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats(filings, m) {
+  const s = m.statsKey(filings);
+  // stat-total always shows the server-side total (all pages), not just current page
+  document.getElementById('stat-total').textContent      = (totalFilings || s.total).toLocaleString();
+  document.getElementById('stat-companies').textContent  = s.companies;
+  document.getElementById('stat-categories').textContent = s.categories;
+  document.getElementById('stat-extra').textContent      = s.extra;
+  document.getElementById('stat-lbl-2').textContent      = s.compLabel;
+  document.getElementById('stat-lbl-extra').textContent  = s.extraLabel;
+}
+
+function resetStats(m) {
+  ['stat-total','stat-companies','stat-categories','stat-extra'].forEach(id=>
+    document.getElementById(id).textContent='—'
+  );
+  if (m) {
+    document.getElementById('stat-lbl-2').textContent     = m.statsKey([]).compLabel  || 'Companies';
+    document.getElementById('stat-lbl-extra').textContent = m.statsKey([]).extraLabel || 'Other';
+  }
+}
+
+// ── Loading ───────────────────────────────────────────────────────────────────
+function setLoading() {
+  const cols = MARKETS[currentMarket].columns.length;
+  document.getElementById('table-body').innerHTML =
+    `<tr><td colspan="${cols}" class="loading-row"><span class="spinner"></span>Loading...</td></tr>`;
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────────
+function clearSearch() {
+  document.getElementById('search-input').value    = '';
+  document.getElementById('category-select').value = '';
+  document.getElementById('date-from').value       = '';
+  document.getElementById('date-to').value         = '';
+  document.getElementById('company-card').classList.remove('visible');
+  const cols = MARKETS[currentMarket].columns.length;
+  document.getElementById('table-body').innerHTML =
+    `<tr><td colspan="${cols}" class="loading-row">Enter a search query above</td></tr>`;
+  document.getElementById('pagination-info').textContent = '';
+  document.getElementById('btn-prev').disabled = true;
+  document.getElementById('btn-next').disabled = true;
+  resetStats(MARKETS[currentMarket]);
+  allFilings = [];
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!allFilings.length) { showToast('No data to export'); return; }
+  const m    = MARKETS[currentMarket];
+  const rows = [m.columns.join(','), ...allFilings.map(f => m.csvRow(f))];
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `${currentMarket}_filings_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('CSV exported');
+}
+
+// ── API panel ─────────────────────────────────────────────────────────────────
+function renderApiPanel(market) {
+  const m = MARKETS[market];
+  document.getElementById('api-endpoints').innerHTML = m.apiEndpoints.map(e =>
+    `<div class="api-endpoint">
+      <span class="method">GET</span>
+      <code class="endpoint-url">${e.url}</code>
+      <span class="ep-desc">${e.desc}</span>
+    </div>`
+  ).join('');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+const today = new Date().toISOString().split('T')[0];
+const month = new Date(Date.now()-30*24*60*60*1000).toISOString().split('T')[0];
+document.getElementById('date-from').value = month;
+document.getElementById('date-to').value   = today;
+switchMarket('sgx');
+</script>
+</body>
+</html>
