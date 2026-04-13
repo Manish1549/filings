@@ -52,6 +52,17 @@
   .btn-ghost{background:#fff;color:#374151;border:1px solid #e5e7eb}
   .btn-ghost:hover{background:#f9fafb;opacity:1}
 
+  /* Typeahead / suggestions */
+  .search-wrap{position:relative;flex:2}
+  .suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.09);z-index:50;max-height:260px;overflow-y:auto;display:none}
+  .suggestions.open{display:block}
+  .sug-item{padding:9px 13px;cursor:pointer;font-size:13px;display:flex;gap:10px;align-items:baseline;border-bottom:1px solid #f3f4f6}
+  .sug-item:last-child{border-bottom:none}
+  .sug-item:hover{background:#f9fafb}
+  .sug-sym{font-weight:600;color:#111;min-width:46px}
+  .sug-name{color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug-xid{font-size:10px;color:#9ca3af;margin-left:auto;flex-shrink:0}
+
   /* Stats */
   .stats-row{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap}
   .stat-card{background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:13px 18px;flex:1;min-width:110px}
@@ -117,6 +128,22 @@
 
   @keyframes spin{to{transform:rotate(360deg)}}
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid #e5e7eb;border-top-color:#6b7280;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
+
+  /* ASX multi-select filter row */
+  .asx-filter-row{display:none;gap:8px;flex-wrap:wrap;align-items:center;padding-top:14px;border-top:1px solid #f3f4f6;margin-top:12px}
+  .multi-drop{position:relative}
+  .multi-drop-btn{height:32px;padding:0 11px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;font-size:12px;color:#374151;cursor:pointer;display:flex;align-items:center;gap:5px;font-family:'Inter',sans-serif;white-space:nowrap;transition:background 0.1s}
+  .multi-drop-btn:hover{background:#f9fafb}
+  .multi-drop-btn.has-sel{border-color:#6b7280;font-weight:500}
+  .drop-count{background:#111;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:600}
+  .drop-arrow{font-size:9px;color:#9ca3af;margin-left:2px}
+  .multi-drop-panel{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.1);z-index:60;min-width:230px;max-height:270px;overflow-y:auto;display:none;padding:5px 0}
+  .multi-drop-panel.open{display:block}
+  .drop-item{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:#374151;user-select:none;transition:background 0.08s}
+  .drop-item:hover{background:#f9fafb}
+  .drop-item input[type=checkbox]{width:14px;height:14px;accent-color:#111;cursor:pointer;flex-shrink:0}
+  .ps-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;cursor:pointer;height:32px;padding:0 4px;white-space:nowrap}
+  .ps-toggle input{width:14px;height:14px;accent-color:#111;cursor:pointer}
 </style>
 </head>
 <body>
@@ -169,13 +196,31 @@
     <!-- Search bar -->
     <div class="search-section">
       <div class="search-row">
-        <div class="field-group" style="flex:2">
+        <div class="search-wrap field-group">
           <label id="search-label">Company name</label>
-          <input id="search-input" placeholder="e.g. DBS GROUP, SINGTEL" onkeydown="if(event.key==='Enter')doSearch()"/>
+          <input id="search-input" placeholder="e.g. DBS GROUP, SINGTEL"
+                 oninput="onSearchInput(this.value)"
+                 onkeydown="onSearchKeydown(event)"
+                 autocomplete="off"/>
+          <!-- Typeahead suggestions (ASX only) -->
+          <div id="suggestions" class="suggestions"></div>
         </div>
         <div class="field-group" id="field-category">
           <label id="category-label">Category</label>
           <select id="category-select"><option value="">All categories</option></select>
+        </div>
+        <!-- ASX: Time Range preset (shown instead of manual date pickers) -->
+        <div class="field-group" style="max-width:140px;display:none" id="field-time-range">
+          <label>Time Range</label>
+          <select id="time-range-select" onchange="onTimeRangeChange(this.value)">
+            <option value="3m">3 Months</option>
+            <option value="6m">6 Months</option>
+            <option value="1y" selected>1 Year</option>
+            <option value="2y">2 Years</option>
+            <option value="3y">3 Years</option>
+            <option value="5y">5 Years</option>
+            <option value="allTime">All Time</option>
+          </select>
         </div>
         <div class="field-group" style="max-width:128px" id="field-from">
           <label>From date</label>
@@ -187,6 +232,33 @@
         </div>
         <button class="btn" onclick="doSearch()">Search</button>
         <button class="btn btn-ghost" onclick="clearSearch()">Clear</button>
+      </div>
+
+      <!-- ASX advanced filters (announcement type, industry, asset type, price sensitive) -->
+      <div class="asx-filter-row" id="asx-filter-row">
+        <div class="multi-drop" id="drop-ann">
+          <button class="multi-drop-btn" id="btn-ann" onclick="toggleDrop('drop-ann')">
+            Announcement Type <span class="drop-count" id="cnt-ann" style="display:none"></span><span class="drop-arrow">▾</span>
+          </button>
+          <div class="multi-drop-panel" id="panel-ann"></div>
+        </div>
+        <div class="multi-drop" id="drop-ind">
+          <button class="multi-drop-btn" id="btn-ind" onclick="toggleDrop('drop-ind')">
+            Industry <span class="drop-count" id="cnt-ind" style="display:none"></span><span class="drop-arrow">▾</span>
+          </button>
+          <div class="multi-drop-panel" id="panel-ind"></div>
+        </div>
+        <div class="multi-drop" id="drop-asset">
+          <button class="multi-drop-btn" id="btn-asset" onclick="toggleDrop('drop-asset')">
+            Asset Type <span class="drop-count" id="cnt-asset" style="display:none"></span><span class="drop-arrow">▾</span>
+          </button>
+          <div class="multi-drop-panel" id="panel-asset"></div>
+        </div>
+        <label class="ps-toggle">
+          <input type="checkbox" id="asx-ps" onchange="currentPage=0;doSearch()">
+          Price Sensitive
+        </label>
+        <button class="btn btn-ghost" style="height:32px;font-size:12px;padding:0 12px" onclick="resetAsxFilters()">Reset filters</button>
       </div>
     </div>
 
@@ -248,6 +320,178 @@ let currentMarket = 'sgx';
 let currentPage   = 0;
 let allFilings    = [];
 let totalFilings  = 0;
+
+// ── ASX filter data ───────────────────────────────────────────────────────────
+const ASX_ANN_TYPES = [
+  'annual report','half-yearly report','issued capital','periodic reports',
+  'security holder details','progress report','company administration',
+  'notice of meeting','asx announcement','distribution announcement',
+  'structured products','quarterly activities report','quarterly cash flow report',
+  'other','asset acquisition & disposal','mfund',"chairman's address",
+  'commitments test entity quarterly reports','letter to shareholders',
+  'takeover announcements/scheme announcements','asx query',
+  'notice of call (contributing shares)',
+];
+const ASX_INDUSTRIES = [
+  'materials','energy','software & services','health care equipment & services',
+  'pharmaceuticals, biotechnology & life sciences','diversified financials',
+  'capital goods','real estate','media & entertainment','consumer services',
+  'commercial & professional services','banks','food, beverage & tobacco',
+  'retailing','financial services','technology hardware & equipment',
+  'transportation','utilities','telecommunication services','insurance',
+];
+const ASX_ASSET_TYPES = ['equity','etf','mfund','debt','other'];
+
+let asxFiltersBuilt = false;
+
+function buildAsxFilters() {
+  if (asxFiltersBuilt) return;
+  _buildPanel('panel-ann',   'ann',   ASX_ANN_TYPES);
+  _buildPanel('panel-ind',   'ind',   ASX_INDUSTRIES);
+  _buildPanel('panel-asset', 'asset', ASX_ASSET_TYPES);
+  asxFiltersBuilt = true;
+}
+
+function _buildPanel(panelId, key, items) {
+  document.getElementById(panelId).innerHTML = items.map(v =>
+    `<label class="drop-item">` +
+    `<input type="checkbox" value="${v.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"` +
+    ` onchange="updateDropCount('${key}');currentPage=0;doSearch()"> ${v}</label>`
+  ).join('');
+}
+
+function toggleDrop(dropId) {
+  const panel = document.querySelector(`#${dropId} .multi-drop-panel`);
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.multi-drop-panel.open').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
+}
+
+function updateDropCount(key) {
+  const cnt = document.querySelectorAll(`#panel-${key} input:checked`).length;
+  const cntEl = document.getElementById(`cnt-${key}`);
+  const btnEl = document.getElementById(`btn-${key}`);
+  cntEl.textContent = cnt;
+  cntEl.style.display = cnt > 0 ? '' : 'none';
+  btnEl.classList.toggle('has-sel', cnt > 0);
+}
+
+function getAsxFilterParams(p) {
+  document.querySelectorAll('#panel-ann input:checked').forEach(c   => p.append('announcement_types', c.value));
+  document.querySelectorAll('#panel-ind input:checked').forEach(c   => p.append('industries', c.value));
+  document.querySelectorAll('#panel-asset input:checked').forEach(c => p.append('asset_types', c.value));
+  if (document.getElementById('asx-ps')?.checked) p.set('price_sensitive', 'true');
+}
+
+function clearAsxFilters() {
+  if (!asxFiltersBuilt) return;
+  document.querySelectorAll('#asx-filter-row input[type=checkbox]').forEach(c => { c.checked = false; });
+  ['ann','ind','asset'].forEach(k => updateDropCount(k));
+  const ps = document.getElementById('asx-ps');
+  if (ps) ps.checked = false;
+}
+
+function resetAsxFilters() {
+  clearAsxFilters();
+  currentPage = 0;
+  doSearch();
+}
+
+// Close dropdowns when clicking outside any multi-drop
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.multi-drop')) {
+    document.querySelectorAll('.multi-drop-panel.open').forEach(p => p.classList.remove('open'));
+  }
+});
+
+// ── ASX time-range helpers ────────────────────────────────────────────────────
+function applyTimeRange(val) {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  let fromStr = '';
+  if (val !== 'allTime') {
+    const d = new Date(today);
+    if      (val === '3m') d.setMonth(d.getMonth() - 3);
+    else if (val === '6m') d.setMonth(d.getMonth() - 6);
+    else if (val === '1y') d.setFullYear(d.getFullYear() - 1);
+    else if (val === '2y') d.setFullYear(d.getFullYear() - 2);
+    else if (val === '3y') d.setFullYear(d.getFullYear() - 3);
+    else if (val === '5y') d.setFullYear(d.getFullYear() - 5);
+    fromStr = d.toISOString().split('T')[0];
+  }
+  document.getElementById('date-from').value = fromStr;
+  document.getElementById('date-to').value   = val === 'allTime' ? '' : todayStr;
+}
+
+function onTimeRangeChange(val) {
+  applyTimeRange(val);
+  currentPage = 0;
+  doSearch();
+}
+
+// ── ASX predictive search state ───────────────────────────────────────────────
+// Both vars set when user picks a suggestion. searchUrl reads them, not input text.
+let asxEntityXId    = null;   // numeric entityXid — primary filter on /market endpoint
+let asxSymbol       = null;   // ticker e.g. "TLM" — fallback if no entityXid
+let asxSuggestTimer = null;
+
+function onSearchInput(val) {
+  if (currentMarket !== 'asx') return;
+  asxEntityXId = null;
+  asxSymbol    = null;
+  document.getElementById('suggestions').classList.remove('open');
+  clearTimeout(asxSuggestTimer);
+  if (val.trim().length < 2) return;
+  asxSuggestTimer = setTimeout(() => fetchAsxSuggestions(val.trim()), 280);
+}
+
+async function fetchAsxSuggestions(q) {
+  try {
+    const data = await fetch(`/api/asx/search?q=${encodeURIComponent(q)}&max_results=8`).then(r => r.json());
+    renderSuggestions(data.results || []);
+  } catch(e) { /* ignore — user can still type a ticker manually */ }
+}
+
+function renderSuggestions(results) {
+  const box = document.getElementById('suggestions');
+  if (!results.length) { box.classList.remove('open'); return; }
+  box.innerHTML = results.map(r => {
+    const sym  = r.symbol       || '';
+    const name = r.company_name || '';
+    const xid  = r.entity_xid  != null ? String(r.entity_xid) : '';
+    return `<div class="sug-item"
+                 data-xid="${xid}"
+                 data-sym="${sym.replace(/"/g,'&quot;')}"
+                 data-name="${name.replace(/"/g,'&quot;')}"
+                 onmousedown="selectAsxSuggestion(this)">
+      <span class="sug-sym">${sym || '—'}</span>
+      <span class="sug-name">${name}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('open');
+}
+
+function selectAsxSuggestion(el) {
+  const xid = el.dataset.xid;
+  asxEntityXId = xid ? Number(xid) : null;
+  asxSymbol    = el.dataset.sym  || null;
+  document.getElementById('search-input').value = el.dataset.sym || el.dataset.name;
+  document.getElementById('suggestions').classList.remove('open');
+}
+
+function hideSuggestions() {
+  document.getElementById('suggestions').classList.remove('open');
+}
+
+function onSearchKeydown(e) {
+  if (e.key === 'Enter')  { hideSuggestions(); doSearch(); }
+  if (e.key === 'Escape') { hideSuggestions(); }
+}
+
+// Close suggestions when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) hideSuggestions();
+});
 
 // ── Market configs ────────────────────────────────────────────────────────────
 const MARKETS = {
@@ -323,11 +567,11 @@ const MARKETS = {
     columns: ['Date','Symbol','Company','Headline','Type','Sensitive','Actions'],
     searchUrl(q, cat, from, to, page) {
       const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
-      if (cat)  p.set('heading_id', cat);
       if (from) p.set('from_date', from);
       if (to)   p.set('to_date', to);
-      if (!q)   return `/api/asx/market?${p}`;
-      return `/api/asx/filings/${q.toUpperCase().trim()}?${p}`;
+      if (asxEntityXId) p.set('entity_xid', asxEntityXId);
+      getAsxFilterParams(p);          // announcement_types, industries, asset_types, price_sensitive
+      return `/api/asx/market?${p}`;
     },
     renderRow(f) {
       const types = (f.announcement_types||[]).join(', ') || '—';
@@ -357,14 +601,14 @@ const MARKETS = {
       return [f.date||'', f.symbol||'', esc(f.company_name), esc(f.headline), esc((f.announcement_types||[]).join(';')), f.is_price_sensitive, f.pdf_url||''].join(',');
     },
     apiEndpoints: [
-      {url:'/api/asx/filings/BHP',                                        desc:'All BHP filings (paginated)'},
-      {url:'/api/asx/filings/BHP?heading_id=7',                           desc:'BHP Annual Reports only'},
-      {url:'/api/asx/filings/CBA?from_date=2024-01-01&price_sensitive=true', desc:'CBA price-sensitive 2024+'},
-      {url:'/api/asx/filings/BHP/all?heading_id=7',                       desc:'All BHP Annual Reports (auto-paginated)'},
-      {url:'/api/asx/market?from_date=2026-04-01&price_sensitive=true',   desc:'Market-wide price-sensitive'},
-      {url:'/api/asx/market/all?from_date=2026-04-11',                    desc:"Today's all announcements"},
-      {url:'/api/asx/categories?from_date=2026-01-01',                    desc:'Live category counts YTD'},
-      {url:'/api/asx/companies?q=BHP',                                    desc:'Company search'},
+      {url:'/api/asx/search?q=BHP',                                          desc:'Step 1 — predictive search → get entity_xid'},
+      {url:'/api/asx/market?entity_xid=204172127',                           desc:'Step 2 — filings for that company (by entityXId)'},
+      {url:'/api/asx/market?entity_xid=204172127&heading_id=7',              desc:'Company annual reports only'},
+      {url:'/api/asx/market?entity_xid=204172127&from_date=2024-01-01',      desc:'Company filings since 2024'},
+      {url:'/api/asx/filings/BHP?heading_id=7',                              desc:'Alt: filings by ticker + type'},
+      {url:'/api/asx/market?from_date=2026-04-01&price_sensitive=true',      desc:'Market-wide price-sensitive'},
+      {url:'/api/asx/market/all?from_date=2026-04-11',                       desc:"All of today's announcements"},
+      {url:'/api/asx/categories?from_date=2026-01-01',                       desc:'Live category counts YTD'},
     ],
   },
 
@@ -552,6 +796,9 @@ function switchMarket(market) {
   currentMarket = market;
   currentPage   = 0;
   allFilings    = [];
+  asxEntityXId = null;
+  asxSymbol    = null;
+  hideSuggestions();
 
   ['sgx','asx','edgar','edinet','fca'].forEach(m => {
     document.getElementById('nav-'+m).classList.toggle('active', m===market);
@@ -564,8 +811,24 @@ function switchMarket(market) {
   document.getElementById('search-input').placeholder   = m.searchPlaceholder;
   document.getElementById('search-input').value = (market === 'edinet') ? new Date().toISOString().split('T')[0] : '';
   document.getElementById('category-label').textContent = m.categoryLabel;
-  document.getElementById('field-from').style.display   = m.showDates ? '' : 'none';
-  document.getElementById('field-to').style.display     = m.showDates ? '' : 'none';
+  // ASX uses time-range picker + multi-select filters; others use manual date inputs + category
+  if (market === 'asx') {
+    document.getElementById('field-category').style.display   = 'none';
+    document.getElementById('field-time-range').style.display = '';
+    document.getElementById('field-from').style.display       = 'none';
+    document.getElementById('field-to').style.display         = 'none';
+    document.getElementById('time-range-select').value        = '1y';
+    applyTimeRange('1y');
+    document.getElementById('asx-filter-row').style.display   = 'flex';
+    buildAsxFilters();   // lazy-init checkboxes on first visit
+    clearAsxFilters();   // reset selections when switching to ASX
+  } else {
+    document.getElementById('field-category').style.display   = '';
+    document.getElementById('field-time-range').style.display = 'none';
+    document.getElementById('field-from').style.display       = m.showDates ? '' : 'none';
+    document.getElementById('field-to').style.display         = m.showDates ? '' : 'none';
+    document.getElementById('asx-filter-row').style.display   = 'none';
+  }
   document.getElementById('company-card').classList.remove('visible');
 
   const colSpan = m.columns.length;
@@ -582,6 +845,7 @@ function switchMarket(market) {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 async function loadCategories(market) {
+  if (market === 'asx') return;  // ASX uses dedicated multi-select filter panels
   const m   = MARKETS[market];
   const sel = document.getElementById('category-select');
   sel.innerHTML = `<option value="">All ${m.categoryLabel.toLowerCase()}s</option>`;
@@ -740,10 +1004,19 @@ function setLoading() {
 
 // ── Clear ─────────────────────────────────────────────────────────────────────
 function clearSearch() {
+  asxEntityXId = null;
+  asxSymbol    = null;
+  hideSuggestions();
   document.getElementById('search-input').value    = '';
   document.getElementById('category-select').value = '';
-  document.getElementById('date-from').value       = '';
-  document.getElementById('date-to').value         = '';
+  if (currentMarket === 'asx') {
+    document.getElementById('time-range-select').value = '1y';
+    applyTimeRange('1y');
+    clearAsxFilters();
+  } else {
+    document.getElementById('date-from').value = '';
+    document.getElementById('date-to').value   = '';
+  }
   document.getElementById('company-card').classList.remove('visible');
   const cols = MARKETS[currentMarket].columns.length;
   document.getElementById('table-body').innerHTML =
