@@ -4,7 +4,8 @@ SGX (Singapore Exchange) Router — Production Level
 All endpoints confirmed from DevTools screenshots + appconfig.json
 
 BASE APIs:
-  Filings:     https://api.sgx.com/announcements/v1.1/
+  Market feed: https://api.sgx.com/announcements/v1.1/         (no company filter)
+  Company:     https://api.sgx.com/announcements/v1.1/company  (value= + exactsearch=true)
   Count:       https://api.sgx.com/announcements/v1.1/count
   Companylist: https://api.sgx.com/announcements/v1.1/companylist
   Securitylist:https://api.sgx.com/announcements/v1.1/securitylist
@@ -16,9 +17,13 @@ CONFIRMED PARAMS (DevTools):
   periodend    YYYYMMDD_HHMMSS
   cat          comma-separated category codes  (e.g. ANNC,FINSTMT)
   sub          sub-category code
-  company      company name (uppercased)
   pagestart    0-based page number
   pagesize     items per page (max 100 on SGX side)
+
+COMPANY ENDPOINT PARAMS (confirmed from DevTools):
+  value        company name (uppercased)  — replaces "company" param
+  exactsearch  "true"                     — exact match on company name
+  Default periodstart for company queries = SGX_EARLIEST (full history since 2006)
 
 COUNT ENDPOINT (DevTools):
   GET /v1.1/count?periodstart=...&periodend=...
@@ -45,6 +50,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -324,7 +330,7 @@ def _build_params(
     page: int,
     page_size: int,
 ) -> dict:
-    """Build the SGX API query params dict."""
+    """Build params for the market-wide /v1.1/ endpoint (no company filter)."""
     params: dict = {
         "periodstart": to_sgx_dt(from_date, end_of_day=False),
         "periodend":   to_sgx_dt(to_date,   end_of_day=True),
@@ -338,6 +344,41 @@ def _build_params(
     if company:
         params["company"] = company.upper()
     return params
+
+
+def _company_url(
+    from_date: Optional[str],
+    to_date: Optional[str],
+    company: str,
+    cat: Optional[str],
+    sub: Optional[str],
+    page: int,
+    page_size: int,
+) -> str:
+    """
+    Build the full URL for the /v1.1/company endpoint with %20-encoded spaces.
+
+    SGX requires RFC 3986 percent-encoding (%20) for spaces in the value param,
+    not form-encoding (+). We build the query string manually with urllib.parse.quote
+    so spaces in company names are never encoded as +.
+    """
+    # quote() uses %20 for spaces; quote_plus() would use + (wrong for SGX)
+    def qv(v: str) -> str:
+        return quote(str(v), safe="")
+
+    pairs = [
+        f"periodstart={qv(to_sgx_dt(from_date, end_of_day=False) if from_date else SGX_EARLIEST)}",
+        f"periodend={qv(to_sgx_dt(to_date, end_of_day=True))}",
+        f"value={qv(company.upper())}",
+        "exactsearch=true",
+        f"pagestart={page}",
+        f"pagesize={page_size}",
+    ]
+    if cat:
+        pairs.append(f"cat={qv(cat)}")
+    if sub:
+        pairs.append(f"sub={qv(sub)}")
+    return f"{SGX_API_BASE}/company?{'&'.join(pairs)}"
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -445,7 +486,8 @@ def _make_response(data: dict, page: int, page_size: int) -> SGXResponse:
     meta_raw    = data.get("meta", {})
     items       = data.get("data", []) or []
     total_items = int(meta_raw.get("totalItems", len(items)))
-    total_pages = int(meta_raw.get("totalPages", 1))
+    # totalPages may be absent on the /company endpoint — calculate via ceiling division
+    total_pages = int(meta_raw.get("totalPages") or max(1, -(-total_items // page_size)))
     return SGXResponse(
         meta=SGXMeta(
             code=str(meta_raw.get("code", "")),
@@ -528,8 +570,12 @@ async def get_sgx_filings(
     - `/api/sgx/filings?company=DBS&cat=ANNC&page_size=100`
     - `/api/sgx/filings?cat=ANNC23,FINSTMT&from_date=20260101`
     """
-    params = _build_params(from_date, to_date, cat, sub, company, page, page_size)
-    data   = await _sgx.get(SGX_API_BASE + "/", params)
+    # SGX website uses /company?value=NAME&exactsearch=true when filtering by company
+    if company:
+        data = await _sgx.get(_company_url(from_date, to_date, company, cat, sub, page, page_size))
+    else:
+        params = _build_params(from_date, to_date, cat, sub, None, page, page_size)
+        data   = await _sgx.get(SGX_API_BASE + "/", params)
     return _make_response(data, page, page_size)
 
 
@@ -556,9 +602,14 @@ async def get_sgx_filings_all(
     all_filings = []
     page        = 0
 
+    use_company_endpoint = bool(company)
+
     while len(all_filings) < max_items:
-        params = _build_params(from_date, to_date, cat, sub, company, page, page_size)
-        data   = await _sgx.get(SGX_API_BASE + "/", params)
+        if use_company_endpoint:
+            data = await _sgx.get(_company_url(from_date, to_date, company, cat, sub, page, page_size))
+        else:
+            params = _build_params(from_date, to_date, cat, sub, None, page, page_size)
+            data   = await _sgx.get(SGX_API_BASE + "/", params)
 
         meta_raw    = data.get("meta", {})
         items       = data.get("data", []) or []
@@ -601,8 +652,7 @@ async def search_sgx(
     - `/api/sgx/search?q=CAPITALAND&cat=FINSTMT`
     - `/api/sgx/search?q=DBS&from_date=20260101&cat=DIV`
     """
-    params = _build_params(from_date, to_date, cat, sub, q, page, page_size)
-    data   = await _sgx.get(SGX_API_BASE + "/", params)
+    data = await _sgx.get(_company_url(from_date, to_date, q, cat, sub, page, page_size))
     return _make_response(data, page, page_size)
 
 

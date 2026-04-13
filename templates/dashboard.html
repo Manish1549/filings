@@ -209,6 +209,16 @@
           <label id="category-label">Category</label>
           <select id="category-select"><option value="">All categories</option></select>
         </div>
+        <!-- SGX: multi-select category dropdown (replaces single select) -->
+        <div class="field-group" id="field-sgx-cat" style="display:none;flex:0 0 auto;min-width:160px">
+          <label>Category</label>
+          <div class="multi-drop" id="sgx-cat-drop">
+            <button class="multi-drop-btn" id="btn-sgx-cat" onclick="toggleDrop('sgx-cat-drop')" style="width:100%">
+              All categories <span class="drop-count" id="cnt-sgx-cat" style="display:none"></span><span class="drop-arrow">▾</span>
+            </button>
+            <div class="multi-drop-panel" id="panel-sgx-cat" style="min-width:260px"></div>
+          </div>
+        </div>
         <!-- ASX: Time Range preset (shown instead of manual date pickers) -->
         <div class="field-group" style="max-width:140px;display:none" id="field-time-range">
           <label>Time Range</label>
@@ -435,14 +445,70 @@ let asxEntityXId    = null;   // numeric entityXid — primary filter on /market
 let asxSymbol       = null;   // ticker e.g. "TLM" — fallback if no entityXid
 let asxSuggestTimer = null;
 
-function onSearchInput(val) {
-  if (currentMarket !== 'asx') return;
-  asxEntityXId = null;
-  asxSymbol    = null;
+// ── SGX company typeahead state ───────────────────────────────────────────────
+let sgxCompanyList   = [];   // full list loaded once from /api/sgx/companies
+let sgxCompanyLoaded = false;
+let sgxCompany       = null; // issuer_name of selected company → used in searchUrl
+
+async function loadSgxCompanies() {
+  if (sgxCompanyLoaded) return;
+  try {
+    const data = await fetch('/api/sgx/companies').then(r => r.json());
+    sgxCompanyList   = data.companies || [];
+    sgxCompanyLoaded = true;
+  } catch(e) { console.warn('SGX company list load failed', e); }
+}
+
+function filterSgxCompanies(q) {
+  if (q.length < 2 || !sgxCompanyList.length) return [];
+  const ql = q.toLowerCase();
+  return sgxCompanyList.filter(c =>
+    String(c.issuer_name  || '').toLowerCase().includes(ql) ||
+    String(c.stock_code   || '').toLowerCase().startsWith(ql) ||
+    String(c.security_name|| '').toLowerCase().includes(ql)
+  ).slice(0, 10);
+}
+
+function showSgxSuggestions(q) {
+  const box = document.getElementById('suggestions');
+  const matches = filterSgxCompanies(q);
+  if (!matches.length) { box.classList.remove('open'); return; }
+  box.innerHTML = matches.map(c => {
+    const code = (c.stock_code    || '').replace(/"/g, '&quot;');
+    const name = (c.issuer_name   || '').replace(/"/g, '&quot;');
+    const sec  = (c.security_name || '').replace(/"/g, '&quot;');
+    return `<div class="sug-item"
+                 data-name="${name}" data-code="${code}"
+                 onmousedown="selectSgxSuggestion(this)">
+      <span class="sug-sym">${c.stock_code || '—'}</span>
+      <span class="sug-name">${c.issuer_name || c.security_name || ''}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('open');
+}
+
+function selectSgxSuggestion(el) {
+  sgxCompany = el.dataset.name;
+  document.getElementById('search-input').value = el.dataset.name;
   document.getElementById('suggestions').classList.remove('open');
-  clearTimeout(asxSuggestTimer);
-  if (val.trim().length < 2) return;
-  asxSuggestTimer = setTimeout(() => fetchAsxSuggestions(val.trim()), 280);
+  currentPage = 0;
+  doSearch(0);
+}
+
+function onSearchInput(val) {
+  if (currentMarket === 'asx') {
+    asxEntityXId = null;
+    asxSymbol    = null;
+    document.getElementById('suggestions').classList.remove('open');
+    clearTimeout(asxSuggestTimer);
+    if (val.trim().length < 2) return;
+    asxSuggestTimer = setTimeout(() => fetchAsxSuggestions(val.trim()), 280);
+  } else if (currentMarket === 'sgx') {
+    sgxCompany = null;   // clear selection when user types fresh
+    showSgxSuggestions(val.trim());
+  } else {
+    hideSuggestions();
+  }
 }
 
 async function fetchAsxSuggestions(q) {
@@ -508,8 +574,12 @@ const MARKETS = {
     columns: ['Date','Company','Title','Category','Subcategory','Stock code','Actions'],
     searchUrl(q, cat, from, to, page) {
       const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
-      if (q)    p.set('company', q);
-      if (cat)  p.set('cat', cat);
+      // Use selected company (from typeahead) or raw typed text
+      const company = sgxCompany || q;
+      if (company) p.set('company', company);
+      // Multi-select: read all checked SGX category checkboxes, join with comma
+      const cats = [...document.querySelectorAll('#panel-sgx-cat input:checked')].map(c => c.value);
+      if (cats.length) p.set('cat', cats.join(','));
       if (from) p.set('from_date', from.replaceAll('-',''));
       if (to)   p.set('to_date', to.replaceAll('-',''));
       return `/api/sgx/filings?${p}`;
@@ -798,6 +868,7 @@ function switchMarket(market) {
   allFilings    = [];
   asxEntityXId = null;
   asxSymbol    = null;
+  sgxCompany   = null;
   hideSuggestions();
 
   ['sgx','asx','edgar','edinet','fca'].forEach(m => {
@@ -811,7 +882,7 @@ function switchMarket(market) {
   document.getElementById('search-input').placeholder   = m.searchPlaceholder;
   document.getElementById('search-input').value = (market === 'edinet') ? new Date().toISOString().split('T')[0] : '';
   document.getElementById('category-label').textContent = m.categoryLabel;
-  // ASX uses time-range picker + multi-select filters; others use manual date inputs + category
+  // SGX + ASX use the time-range preset picker; others use manual date inputs
   if (market === 'asx') {
     document.getElementById('field-category').style.display   = 'none';
     document.getElementById('field-time-range').style.display = '';
@@ -820,10 +891,24 @@ function switchMarket(market) {
     document.getElementById('time-range-select').value        = '1y';
     applyTimeRange('1y');
     document.getElementById('asx-filter-row').style.display   = 'flex';
-    buildAsxFilters();   // lazy-init checkboxes on first visit
-    clearAsxFilters();   // reset selections when switching to ASX
+    buildAsxFilters();
+    clearAsxFilters();
+  } else if (market === 'sgx') {
+    document.getElementById('field-category').style.display   = 'none';
+    document.getElementById('field-sgx-cat').style.display    = '';
+    document.getElementById('field-time-range').style.display = '';
+    document.getElementById('field-from').style.display       = 'none';
+    document.getElementById('field-to').style.display         = 'none';
+    document.getElementById('time-range-select').value        = '1y';
+    applyTimeRange('1y');
+    document.getElementById('asx-filter-row').style.display   = 'none';
+    // Reset SGX category checkboxes when switching markets
+    document.querySelectorAll('#panel-sgx-cat input:checked').forEach(c => c.checked = false);
+    updateDropCount('sgx-cat');
+    loadSgxCompanies();   // pre-load company list for typeahead (no-op if already loaded)
   } else {
     document.getElementById('field-category').style.display   = '';
+    document.getElementById('field-sgx-cat').style.display    = 'none';
     document.getElementById('field-time-range').style.display = 'none';
     document.getElementById('field-from').style.display       = m.showDates ? '' : 'none';
     document.getElementById('field-to').style.display         = m.showDates ? '' : 'none';
@@ -846,28 +931,36 @@ function switchMarket(market) {
 // ── Categories ────────────────────────────────────────────────────────────────
 async function loadCategories(market) {
   if (market === 'asx') return;  // ASX uses dedicated multi-select filter panels
-  const m   = MARKETS[market];
-  const sel = document.getElementById('category-select');
-  sel.innerHTML = `<option value="">All ${m.categoryLabel.toLowerCase()}s</option>`;
+  const m = MARKETS[market];
   try {
     const r    = await fetch(m.categoriesUrl);
     const data = await r.json();
 
-    // SGX: grouped structure  { groups: [{group, categories:[{code,label},...]},...] }
-    if (data.groups) {
+    // SGX: grouped structure → build checkbox panels (multi-select)
+    if (market === 'sgx' && data.groups) {
+      const panel = document.getElementById('panel-sgx-cat');
+      panel.innerHTML = '';
       for (const grp of data.groups) {
-        const og = document.createElement('optgroup');
-        og.label = grp.group;
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'padding:6px 13px 2px;font-size:10px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;margin-top:2px';
+        hdr.textContent = grp.group;
+        panel.appendChild(hdr);
         for (const cat of (grp.categories || [])) {
-          const o = new Option(cat.label, cat.code);
-          og.appendChild(o);
+          const lbl = document.createElement('label');
+          lbl.className = 'drop-item';
+          lbl.innerHTML =
+            `<input type="checkbox" value="${cat.code}"` +
+            ` onchange="updateDropCount('sgx-cat');currentPage=0;doSearch()">` +
+            ` ${cat.label}`;
+          panel.appendChild(lbl);
         }
-        sel.appendChild(og);
       }
       return;
     }
 
-    // Flat list — ASX, EDGAR, FCA, EDINET
+    // Flat list — EDGAR, FCA, EDINET
+    const sel = document.getElementById('category-select');
+    sel.innerHTML = `<option value="">All ${m.categoryLabel.toLowerCase()}s</option>`;
     const items = data.categories || data.form_types || data.doc_types || [];
     for (const c of items) {
       const val   = m.categoryValueKey ? c[m.categoryValueKey] : c;
@@ -1006,13 +1099,18 @@ function setLoading() {
 function clearSearch() {
   asxEntityXId = null;
   asxSymbol    = null;
+  sgxCompany   = null;
   hideSuggestions();
   document.getElementById('search-input').value    = '';
   document.getElementById('category-select').value = '';
-  if (currentMarket === 'asx') {
+  if (currentMarket === 'asx' || currentMarket === 'sgx') {
     document.getElementById('time-range-select').value = '1y';
     applyTimeRange('1y');
-    clearAsxFilters();
+    if (currentMarket === 'asx') clearAsxFilters();
+    if (currentMarket === 'sgx') {
+      document.querySelectorAll('#panel-sgx-cat input:checked').forEach(c => c.checked = false);
+      updateDropCount('sgx-cat');
+    }
   } else {
     document.getElementById('date-from').value = '';
     document.getElementById('date-to').value   = '';
