@@ -289,6 +289,24 @@ class SGXClient:
 
 _sgx = SGXClient()
 
+# ── Company cache (loaded once, used for typeahead) ────────────────────────────
+_company_cache: list[dict] = []
+_company_cache_loaded: bool = False
+
+async def _ensure_company_cache() -> None:
+    """Fetch /companylist once and keep it in memory for fast typeahead filtering."""
+    global _company_cache, _company_cache_loaded
+    if _company_cache_loaded:
+        return
+    try:
+        data = await _sgx.get(SGX_API_BASE + "/companylist")
+        companies = data.get("data", []) or (data if isinstance(data, list) else [])
+        _company_cache = companies
+        _company_cache_loaded = True
+        logger.info("SGX company cache loaded: %d companies", len(companies))
+    except Exception as e:
+        logger.warning("SGX company cache load failed: %s", e)
+
 
 # ── Date helpers ──────────────────────────────────────────────────────────────
 def to_sgx_dt(d: Optional[str], end_of_day: bool = False) -> str:
@@ -483,11 +501,18 @@ def parse_filing(item: dict) -> SGXFiling:
 
 
 def _make_response(data: dict, page: int, page_size: int) -> SGXResponse:
-    meta_raw    = data.get("meta", {})
-    items       = data.get("data", []) or []
-    total_items = int(meta_raw.get("totalItems", len(items)))
-    # totalPages may be absent on the /company endpoint — calculate via ceiling division
-    total_pages = int(meta_raw.get("totalPages") or max(1, -(-total_items // page_size)))
+    meta_raw = data.get("meta", {})
+    items    = data.get("data", []) or []
+
+    # SGX API always returns totalItems = number of items in THIS page (not real total).
+    # Infer has_more from whether we received a full page.
+    has_more    = len(items) >= page_size
+    # Running total: at least what we've fetched so far; show +1 placeholder when more exist
+    items_so_far = page * page_size + len(items)
+    total_items  = items_so_far + (1 if has_more else 0)   # "+1 so UI knows list continues"
+
+    total_pages = page + (2 if has_more else 1)
+
     return SGXResponse(
         meta=SGXMeta(
             code=str(meta_raw.get("code", "")),
@@ -498,7 +523,7 @@ def _make_response(data: dict, page: int, page_size: int) -> SGXResponse:
         total=total_items,
         page=page,
         page_size=page_size,
-        has_more=(page + 1) < total_pages,
+        has_more=has_more,
         filings=[parse_filing(i) for i in items],
     )
 
@@ -711,6 +736,34 @@ async def get_sgx_categories(
         }
 
 
+@router.get("/suggest", summary="Typeahead company search — returns matching SGX companies from cache")
+async def suggest_sgx_companies(
+    q: str = Query(..., min_length=1, description="Company name or stock code prefix"),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """
+    Fast typeahead suggest for SGX companies. Loads the full companylist once into
+    memory, then filters locally — no SGX API call per keystroke.
+
+    Use the returned ``issuer_name`` as the ``company`` param in /filings so that
+    the /company?value=NAME&exactsearch=true query matches exactly.
+
+    Examples:
+    - `/api/sgx/suggest?q=DBS`
+    - `/api/sgx/suggest?q=sing`
+    - `/api/sgx/suggest?q=D05`
+    """
+    await _ensure_company_cache()
+    ql = q.lower()
+    results = [
+        c for c in _company_cache
+        if ql in str(c.get("issuer_name",   "")).lower()
+        or ql in str(c.get("security_name", "")).lower()
+        or str(c.get("stock_code", "")).lower().startswith(ql)
+    ][:limit]
+    return {"query": q, "count": len(results), "results": results}
+
+
 @router.get("/companies", summary="List SGX listed companies")
 async def get_sgx_companies(
     q: Optional[str] = Query(None, description="Filter by name or stock code"),
@@ -731,7 +784,7 @@ async def get_sgx_companies(
             or q_lower in str(c.get("security_name", "")).lower()
         ]
 
-    return {"total": len(companies), "companies": companies[:500]}
+    return {"total": len(companies), "companies": companies}
 
 
 @router.get("/securities", summary="List SGX securities")

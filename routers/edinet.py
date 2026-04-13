@@ -258,6 +258,41 @@ async def fetch_date(target_date: str) -> list:
     raise HTTPException(status_code=503, detail=f"EDINET unreachable after retries: {str(last_exc)}")
 
 
+# ── Suggest endpoint (uses edinet-tools bundled company data — no API key needed) ──
+@router.get("/suggest", summary="Typeahead company search for EDINET")
+async def suggest_edinet_companies(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """
+    Fast company typeahead powered by edinet-tools (offline, no API key required).
+    Returns matching EDINET-registered companies by Japanese or English name.
+    """
+    try:
+        # Import directly from submodule to avoid optional pandas dependency in client.py
+        from edinet_tools.entity import search_entities
+        results = search_entities(q.strip(), limit=limit)
+        return {
+            "query": q,
+            "count": len(results),
+            "results": [
+                {
+                    "edinet_code": r.edinet_code,
+                    "ticker":      r.ticker,
+                    "name_en":     r.name_en,
+                    "name_jp":     r.name_jp,
+                    "is_listed":   r.is_listed,
+                }
+                for r in results
+            ],
+        }
+    except (ImportError, ModuleNotFoundError) as e:
+        raise HTTPException(status_code=501, detail=f"edinet-tools not available: {e}. Run: pip install edinet-tools")
+    except Exception as e:
+        logger.warning("EDINET suggest error: %s", e)
+        return {"query": q, "count": 0, "results": []}
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @router.get("/filings", response_model=EDINETResponse, summary="Get EDINET filings by date")
 async def get_edinet_filings(

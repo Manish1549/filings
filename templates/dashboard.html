@@ -56,12 +56,16 @@
   .search-wrap{position:relative;flex:2}
   .suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.09);z-index:50;max-height:260px;overflow-y:auto;display:none}
   .suggestions.open{display:block}
-  .sug-item{padding:9px 13px;cursor:pointer;font-size:13px;display:flex;gap:10px;align-items:baseline;border-bottom:1px solid #f3f4f6}
+  .sug-item{padding:8px 13px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid #f3f4f6}
   .sug-item:last-child{border-bottom:none}
   .sug-item:hover{background:#f9fafb}
-  .sug-sym{font-weight:600;color:#111;min-width:46px}
-  .sug-name{color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sug-xid{font-size:10px;color:#9ca3af;margin-left:auto;flex-shrink:0}
+  .sug-left{display:flex;align-items:center;gap:7px;min-width:0;flex:1}
+  .sug-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .sug-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+  .sug-name{color:#111;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug-alt{color:#9ca3af;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  .sug-sym{font-weight:700;color:#374151;font-size:12px;font-family:'SF Mono',monospace}
+  .sug-sector{font-size:10px;color:#6b7280;white-space:nowrap}
 
   /* Stats */
   .stats-row{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap}
@@ -439,110 +443,104 @@ function onTimeRangeChange(val) {
   doSearch();
 }
 
-// ── ASX predictive search state ───────────────────────────────────────────────
-// Both vars set when user picks a suggestion. searchUrl reads them, not input text.
-let asxEntityXId    = null;   // numeric entityXid — primary filter on /market endpoint
-let asxSymbol       = null;   // ticker e.g. "TLM" — fallback if no entityXid
-let asxSuggestTimer = null;
+// ── Unified company selection state ──────────────────────────────────────────
+// Each market reads its own slot; selectCompany() fills the right one.
+let asxEntityXId  = null;   // ASX: numeric entityXid
+let asxSymbol     = null;   // ASX: ticker symbol
+let sgxCompany    = null;   // SGX: exact uppercased company name
+let edgarTicker   = null;   // EDGAR: ticker or CIK
+let edinetCompany = null;   // EDINET: { code, name }
 
-// ── SGX company typeahead state ───────────────────────────────────────────────
-let sgxCompanyList   = [];   // full list loaded once from /api/sgx/companies
-let sgxCompanyLoaded = false;
-let sgxCompany       = null; // issuer_name of selected company → used in searchUrl
-
-async function loadSgxCompanies() {
-  if (sgxCompanyLoaded) return;
-  try {
-    const data = await fetch('/api/sgx/companies').then(r => r.json());
-    sgxCompanyList   = data.companies || [];
-    sgxCompanyLoaded = true;
-  } catch(e) { console.warn('SGX company list load failed', e); }
-}
-
-function filterSgxCompanies(q) {
-  if (q.length < 2 || !sgxCompanyList.length) return [];
-  const ql = q.toLowerCase();
-  return sgxCompanyList.filter(c =>
-    String(c.issuer_name  || '').toLowerCase().includes(ql) ||
-    String(c.stock_code   || '').toLowerCase().startsWith(ql) ||
-    String(c.security_name|| '').toLowerCase().includes(ql)
-  ).slice(0, 10);
-}
-
-function showSgxSuggestions(q) {
-  const box = document.getElementById('suggestions');
-  const matches = filterSgxCompanies(q);
-  if (!matches.length) { box.classList.remove('open'); return; }
-  box.innerHTML = matches.map(c => {
-    const code = (c.stock_code    || '').replace(/"/g, '&quot;');
-    const name = (c.issuer_name   || '').replace(/"/g, '&quot;');
-    const sec  = (c.security_name || '').replace(/"/g, '&quot;');
-    return `<div class="sug-item"
-                 data-name="${name}" data-code="${code}"
-                 onmousedown="selectSgxSuggestion(this)">
-      <span class="sug-sym">${c.stock_code || '—'}</span>
-      <span class="sug-name">${c.issuer_name || c.security_name || ''}</span>
-    </div>`;
-  }).join('');
-  box.classList.add('open');
-}
-
-function selectSgxSuggestion(el) {
-  sgxCompany = el.dataset.name;
-  document.getElementById('search-input').value = el.dataset.name;
-  document.getElementById('suggestions').classList.remove('open');
-  currentPage = 0;
-  doSearch(0);
-}
+// ── Unified suggest ───────────────────────────────────────────────────────────
+let suggestTimer = null;
+const EXCH_FLAG  = { edgar:'🇺🇸', edinet:'🇯🇵', sgx:'🇸🇬', asx:'🇦🇺', fca:'🇬🇧' };
+const EXCH_COLOR = { edgar:'#1d4ed8', edinet:'#dc2626', sgx:'#b45309', asx:'#15803d', fca:'#7c3aed' };
 
 function onSearchInput(val) {
-  if (currentMarket === 'asx') {
-    asxEntityXId = null;
-    asxSymbol    = null;
-    document.getElementById('suggestions').classList.remove('open');
-    clearTimeout(asxSuggestTimer);
-    if (val.trim().length < 2) return;
-    asxSuggestTimer = setTimeout(() => fetchAsxSuggestions(val.trim()), 280);
-  } else if (currentMarket === 'sgx') {
-    sgxCompany = null;   // clear selection when user types fresh
-    showSgxSuggestions(val.trim());
-  } else {
-    hideSuggestions();
-  }
+  clearTimeout(suggestTimer);
+  hideSuggestions();
+  const q = val.trim();
+  if (q.length < 1) return;
+  // Reset selection for current market
+  asxEntityXId  = null; asxSymbol    = null;
+  sgxCompany    = null; edgarTicker  = null; edinetCompany = null;
+  suggestTimer = setTimeout(() => fetchSuggestions(q), 260);
 }
 
-async function fetchAsxSuggestions(q) {
+async function fetchSuggestions(q) {
   try {
-    const data = await fetch(`/api/asx/search?q=${encodeURIComponent(q)}&max_results=8`).then(r => r.json());
-    renderSuggestions(data.results || []);
-  } catch(e) { /* ignore — user can still type a ticker manually */ }
+    const url  = `/api/suggest?q=${encodeURIComponent(q)}&limit=10&markets=${currentMarket}`;
+    const data = await fetch(url).then(r => r.json());
+    renderSuggestions(data.results || [], data.error);
+  } catch(e) { hideSuggestions(); }
 }
 
-function renderSuggestions(results) {
+function renderSuggestions(results, err) {
   const box = document.getElementById('suggestions');
-  if (!results.length) { box.classList.remove('open'); return; }
+  if (err || !results.length) {
+    // DB not seeded yet — show a hint
+    if (err && err.includes('not seeded')) {
+      box.innerHTML = `<div style="padding:10px 14px;font-size:12px;color:#6b7280">
+        Seeding company database… try again in a moment.</div>`;
+      box.classList.add('open');
+    } else {
+      box.classList.remove('open');
+    }
+    return;
+  }
+
   box.innerHTML = results.map(r => {
-    const sym  = r.symbol       || '';
-    const name = r.company_name || '';
-    const xid  = r.entity_xid  != null ? String(r.entity_xid) : '';
-    return `<div class="sug-item"
-                 data-xid="${xid}"
-                 data-sym="${sym.replace(/"/g,'&quot;')}"
-                 data-name="${name.replace(/"/g,'&quot;')}"
-                 onmousedown="selectAsxSuggestion(this)">
-      <span class="sug-sym">${sym || '—'}</span>
-      <span class="sug-name">${name}</span>
+    const name   = (r.name || '').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const nameAlt= (r.name_alt || '').replace(/</g,'&lt;');
+    const ticker = r.ticker || r.symbol || '';
+    const flag   = EXCH_FLAG[r.exchange]  || '';
+    const color  = EXCH_COLOR[r.exchange] || '#6b7280';
+    const label  = r.exchange_label || r.exchange.toUpperCase();
+    const sector = r.sector ? `<span class="sug-sector">${r.sector}</span>` : '';
+
+    // Encode full row data for routing
+    const payload = encodeURIComponent(JSON.stringify({
+      name:        r.name,
+      name_alt:    r.name_alt || '',
+      exchange:    r.exchange,
+      lookup_key:  r.lookup_key,
+      lookup_type: r.lookup_type,
+      ticker:      ticker,
+      symbol:      r.symbol || '',
+    }));
+
+    return `<div class="sug-item" onmousedown="selectCompany(${payload})">
+      <div class="sug-left">
+        <span class="sug-badge" style="background:${color}20;color:${color}">${flag} ${label}</span>
+        <span class="sug-name">${name}</span>
+        ${nameAlt ? `<span class="sug-alt">${nameAlt}</span>` : ''}
+      </div>
+      <div class="sug-right">
+        ${ticker ? `<span class="sug-sym">${ticker}</span>` : ''}
+        ${sector}
+      </div>
     </div>`;
   }).join('');
   box.classList.add('open');
 }
 
-function selectAsxSuggestion(el) {
-  const xid = el.dataset.xid;
-  asxEntityXId = xid ? Number(xid) : null;
-  asxSymbol    = el.dataset.sym  || null;
-  document.getElementById('search-input').value = el.dataset.sym || el.dataset.name;
-  document.getElementById('suggestions').classList.remove('open');
+function selectCompany(payload) {
+  const c = (typeof payload === 'string') ? JSON.parse(decodeURIComponent(payload)) : payload;
+
+  // Switch market tab if different from current
+  if (c.exchange !== currentMarket) switchMarket(c.exchange);
+
+  // Fill the right routing slot
+  if (c.lookup_type === 'asx_xid')     { asxEntityXId  = Number(c.lookup_key); asxSymbol = c.symbol || c.ticker; }
+  if (c.lookup_type === 'asx_ticker')  { asxSymbol = c.ticker; }
+  if (c.lookup_type === 'sgx_name')    { sgxCompany    = c.lookup_key; }  // already uppercased
+  if (c.lookup_type === 'edgar_cik')   { edgarTicker   = c.ticker || c.lookup_key; }
+  if (c.lookup_type === 'edinet_code') { edinetCompany = { code: c.lookup_key, name: c.name }; }
+
+  document.getElementById('search-input').value = c.name;
+  hideSuggestions();
+  currentPage = 0;
+  doSearch(0);
 }
 
 function hideSuggestions() {
@@ -685,18 +683,20 @@ const MARKETS = {
   edgar: {
     title: 'EDGAR — US Securities and Exchange Commission',
     sub: 'SEC filings · data.sec.gov · Free, no API key',
-    searchLabel: 'Ticker or CIK',
-    searchPlaceholder: 'e.g. AAPL, TSLA, MSFT, 0000320193',
+    searchLabel: 'Company / Ticker',
+    searchPlaceholder: 'e.g. Apple, AAPL, Tesla, TSLA…',
     categoryLabel: 'Form type',
     categoriesUrl: '/api/edgar/form-types',
     categoryValueKey: 'form',
-    showDates: true,
+    showDates: false,
     columns: ['Filing date','Report date','Company','Form','Category','XBRL','Actions'],
     searchUrl(q, cat, from, to, page) {
-      if (!q) return null;
+      // Use ticker from typeahead if selected, otherwise use raw input
+      const ticker = edgarTicker || q.trim();
+      if (!ticker) return null;
       const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
-      if (cat)  p.set('form_type', cat);
-      return `/api/edgar/filings/${q.trim().toUpperCase()}?${p}`;
+      if (cat) p.set('form_type', cat);
+      return `/api/edgar/filings/${encodeURIComponent(ticker.toUpperCase())}?${p}`;
     },
     renderRow(f) {
       const xbrl = f.is_xbrl || f.is_inline_xbrl
@@ -743,17 +743,24 @@ const MARKETS = {
   edinet: {
     title: 'EDINET — Japan Financial Services Agency',
     sub: 'Securities filings · api.edinet-fsa.go.jp · Free API key required',
-    searchLabel: 'Date',
-    searchPlaceholder: 'YYYY-MM-DD (e.g. 2026-03-30)',
+    searchLabel: 'Company name',
+    searchPlaceholder: 'e.g. Toyota, Sony, Softbank…',
     categoryLabel: 'Document type',
     categoriesUrl: '/api/edinet/doc-types',
     categoryValueKey: 'code',
-    showDates: false,
+    showDates: true,
     columns: ['Submitted','Company','Securities code','Document type','Period','XBRL','PDF','Actions'],
     searchUrl(q, cat, from, to, page) {
-      const target = q.trim() || new Date().toISOString().split('T')[0];
+      // Use the "to" date (or today) as the filing date; optionally filter by company
+      const target = to || new Date().toISOString().split('T')[0];
       const p = new URLSearchParams({ date: target });
       if (cat) p.set('doc_type', cat);
+      // Company filter: prefer edinet_code (exact), fall back to name substring
+      if (edinetCompany) {
+        p.set('company', edinetCompany.name);
+      } else if (q.trim()) {
+        p.set('company', q.trim());
+      }
       return `/api/edinet/filings?${p}`;
     },
     renderRow(f) {
@@ -866,9 +873,11 @@ function switchMarket(market) {
   currentMarket = market;
   currentPage   = 0;
   allFilings    = [];
-  asxEntityXId = null;
-  asxSymbol    = null;
-  sgxCompany   = null;
+  asxEntityXId  = null;
+  asxSymbol     = null;
+  sgxCompany    = null;
+  edgarTicker   = null;
+  edinetCompany = null;
   hideSuggestions();
 
   ['sgx','asx','edgar','edinet','fca'].forEach(m => {
@@ -880,7 +889,7 @@ function switchMarket(market) {
   document.getElementById('page-sub').textContent       = m.sub;
   document.getElementById('search-label').textContent   = m.searchLabel;
   document.getElementById('search-input').placeholder   = m.searchPlaceholder;
-  document.getElementById('search-input').value = (market === 'edinet') ? new Date().toISOString().split('T')[0] : '';
+  document.getElementById('search-input').value = '';
   document.getElementById('category-label').textContent = m.categoryLabel;
   // SGX + ASX use the time-range preset picker; others use manual date inputs
   if (market === 'asx') {
@@ -905,7 +914,6 @@ function switchMarket(market) {
     // Reset SGX category checkboxes when switching markets
     document.querySelectorAll('#panel-sgx-cat input:checked').forEach(c => c.checked = false);
     updateDropCount('sgx-cat');
-    loadSgxCompanies();   // pre-load company list for typeahead (no-op if already loaded)
   } else {
     document.getElementById('field-category').style.display   = '';
     document.getElementById('field-sgx-cat').style.display    = 'none';
@@ -996,6 +1004,9 @@ async function doSearch(page) {
     const total   = data.total ?? filings.length;
     const hasMore = data.has_more ?? (data.total_pages ? (page + 1) < data.total_pages : false);
 
+    // If the page returned nothing and we're past page 0, step back one page
+    if (!filings.length && page > 0) { currentPage--; doSearch(currentPage); return; }
+
     allFilings   = filings;
     totalFilings = total;
 
@@ -1053,11 +1064,13 @@ function renderTable(filings, total, page, hasMore) {
 
   const start   = page * PAGE_SIZE + 1;
   const end     = start + filings.length - 1;
-  const showEnd = total > 0 ? ` of ${total.toLocaleString()}` : '';
-  document.getElementById('pagination-info').textContent = `Showing ${start}–${end}${showEnd}`;
-  document.getElementById('btn-prev').disabled = page === 0;
-  // Use has_more if available; fall back to total comparison
+  // SGX doesn't return a real total — show "X–Y of N+" when more pages exist
   const moreAvailable = (hasMore !== undefined) ? hasMore : (end < total);
+  const totalLabel = (total > 0 && currentMarket !== 'sgx')
+    ? ` of ${total.toLocaleString()}`
+    : (moreAvailable ? `+` : ` of ${end}`);
+  document.getElementById('pagination-info').textContent = `Showing ${start}–${end}${totalLabel}`;
+  document.getElementById('btn-prev').disabled = page === 0;
   document.getElementById('btn-next').disabled = !moreAvailable;
 }
 
@@ -1097,9 +1110,11 @@ function setLoading() {
 
 // ── Clear ─────────────────────────────────────────────────────────────────────
 function clearSearch() {
-  asxEntityXId = null;
-  asxSymbol    = null;
-  sgxCompany   = null;
+  asxEntityXId  = null;
+  asxSymbol     = null;
+  sgxCompany    = null;
+  edgarTicker   = null;
+  edinetCompany = null;
   hideSuggestions();
   document.getElementById('search-input').value    = '';
   document.getElementById('category-select').value = '';

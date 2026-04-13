@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Filings — Company</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{font-family:'Inter',sans-serif;background:#0a0a0a;color:#e5e7eb;font-size:14px;line-height:1.5}
+
+  /* Subtle grid background */
+  body::before{
+    content:'';position:fixed;inset:0;
+    background-image:linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,0.025) 1px,transparent 1px);
+    background-size:48px 48px;pointer-events:none;z-index:0
+  }
+
+  /* Top nav */
+  .topnav{position:sticky;top:0;z-index:20;height:54px;padding:0 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(10,10,10,0.85);backdrop-filter:blur(16px)}
+  .logo{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;letter-spacing:-0.3px}
+  .logo-ring{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center}
+  .logo-dot{width:7px;height:7px;border-radius:50%;background:#fff}
+  .nav-center{display:flex;align-items:center;gap:6px}
+  .nav-sep{color:rgba(255,255,255,0.2);font-size:16px;margin:0 2px}
+  .nav-back{display:flex;align-items:center;gap:5px;font-size:12px;color:#6b7280;text-decoration:none;padding:5px 11px;border-radius:20px;transition:all 0.15s;border:1px solid transparent}
+  .nav-back:hover{color:#d1d5db;border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.05)}
+  .nav-right{display:flex;gap:6px}
+  .nav-btn{padding:5px 13px;border-radius:20px;font-size:12px;color:#6b7280;text-decoration:none;border:1px solid rgba(255,255,255,0.08);background:transparent;transition:all 0.15s;cursor:pointer;font-family:'Inter',sans-serif}
+  .nav-btn:hover{color:#d1d5db;border-color:rgba(255,255,255,0.2);background:rgba(255,255,255,0.06)}
+
+  /* Page */
+  .page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:28px 28px 80px}
+
+  /* Company header */
+  .company-header{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:16px;padding:24px 28px;margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;backdrop-filter:blur(12px)}
+  .company-header-left{display:flex;align-items:flex-start;gap:18px;min-width:0;flex:1}
+  .company-avatar{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+  .company-info{min-width:0}
+  .company-name{font-size:22px;font-weight:600;letter-spacing:-0.5px;color:#fff;margin-bottom:8px;line-height:1.2}
+  .company-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .exch-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:600;flex-shrink:0}
+  .ticker-tag{font-size:12px;font-weight:600;color:#9ca3af;font-family:'SF Mono','Fira Mono',monospace;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px}
+  .sector-tag{font-size:11px;color:#6b7280;padding:2px 9px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:6px}
+  .company-header-right{display:flex;gap:10px;flex-shrink:0;align-items:flex-start}
+  .co-stat{text-align:center;padding:10px 20px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;min-width:90px}
+  .co-stat-val{font-size:20px;font-weight:600;color:#fff}
+  .co-stat-lbl{font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px}
+
+  /* Filter card */
+  .filter-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px 22px;margin-bottom:16px;backdrop-filter:blur(8px)}
+  .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .field-group{display:flex;flex-direction:column;gap:5px}
+  .field-group label{font-size:10px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:0.6px}
+  .field-group select,.field-group input[type=date]{
+    height:36px;padding:0 11px;
+    border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+    font-size:13px;color:#e5e7eb;background:rgba(255,255,255,0.06);
+    outline:none;font-family:'Inter',sans-serif;transition:border-color 0.15s;
+    appearance:auto;color-scheme:dark
+  }
+  .field-group select:focus,.field-group input[type=date]:focus{border-color:rgba(255,255,255,0.25)}
+  .field-group select option{background:#1a1a1a;color:#e5e7eb}
+
+  /* Multi-select dropdown */
+  .multi-drop{position:relative}
+  .multi-drop-btn{
+    height:36px;padding:0 12px;
+    border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+    background:rgba(255,255,255,0.06);font-size:13px;color:#d1d5db;
+    cursor:pointer;display:flex;align-items:center;gap:7px;
+    font-family:'Inter',sans-serif;white-space:nowrap;
+    transition:all 0.15s;min-width:160px
+  }
+  .multi-drop-btn:hover{border-color:rgba(255,255,255,0.2);color:#fff}
+  .multi-drop-btn.has-sel{border-color:rgba(255,255,255,0.3);color:#fff;font-weight:500}
+  .drop-count{background:rgba(255,255,255,0.15);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600}
+  .drop-arrow{font-size:9px;color:#4b5563;margin-left:auto}
+  .multi-drop-panel{
+    position:absolute;top:calc(100% + 6px);left:0;
+    background:#141414;border:1px solid rgba(255,255,255,0.1);border-radius:12px;
+    box-shadow:0 16px 48px rgba(0,0,0,0.6);z-index:60;
+    min-width:240px;max-height:280px;overflow-y:auto;
+    display:none;padding:5px 0;
+    scrollbar-width:thin;scrollbar-color:#333 transparent
+  }
+  .multi-drop-panel.open{display:block}
+  .multi-drop-panel::-webkit-scrollbar{width:4px}
+  .multi-drop-panel::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
+  .drop-group-label{padding:9px 14px 4px;font-size:10px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:0.6px;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px}
+  .drop-group-label:first-child{border-top:none;margin-top:0}
+  .drop-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;font-size:13px;color:#9ca3af;user-select:none;transition:background 0.08s}
+  .drop-item:hover{background:rgba(255,255,255,0.05);color:#e5e7eb}
+  .drop-item input[type=checkbox]{width:14px;height:14px;accent-color:#fff;cursor:pointer;flex-shrink:0}
+
+  /* Time range pills */
+  .time-range-pills{display:flex;gap:4px;flex-wrap:wrap}
+  .tr-pill{
+    padding:5px 12px;border-radius:8px;
+    border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);
+    font-size:12px;color:#6b7280;cursor:pointer;
+    transition:all 0.12s;white-space:nowrap;font-family:'Inter',sans-serif
+  }
+  .tr-pill:hover{border-color:rgba(255,255,255,0.2);color:#d1d5db}
+  .tr-pill.active{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.3);color:#fff;font-weight:500}
+
+  /* Buttons */
+  .btn{
+    height:36px;padding:0 18px;border-radius:8px;font-size:13px;font-weight:500;
+    cursor:pointer;border:none;background:#fff;color:#000;
+    font-family:'Inter',sans-serif;transition:opacity 0.15s;white-space:nowrap
+  }
+  .btn:hover{opacity:0.85}
+  .btn-ghost{background:rgba(255,255,255,0.06);color:#9ca3af;border:1px solid rgba(255,255,255,0.1)}
+  .btn-ghost:hover{background:rgba(255,255,255,0.1);color:#d1d5db;opacity:1}
+  .ps-toggle{
+    display:flex;align-items:center;gap:7px;font-size:13px;color:#9ca3af;
+    cursor:pointer;height:36px;padding:0 4px;white-space:nowrap;user-select:none;transition:color 0.15s
+  }
+  .ps-toggle:hover{color:#d1d5db}
+  .ps-toggle input{width:14px;height:14px;accent-color:#fff;cursor:pointer}
+
+  /* Filings table card */
+  .table-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;backdrop-filter:blur(8px)}
+  .table-head-row{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02)}
+  .table-head-title{font-size:13px;font-weight:500;color:#9ca3af}
+  .table-actions{display:flex;gap:6px}
+  table{width:100%;border-collapse:collapse}
+  thead tr{border-bottom:1px solid rgba(255,255,255,0.07)}
+  th{padding:9px 14px;text-align:left;font-size:10px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;background:rgba(255,255,255,0.02)}
+  tbody tr{border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.1s}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:rgba(255,255,255,0.04)}
+  td{padding:12px 14px;font-size:13px;vertical-align:middle;color:#d1d5db}
+  .td-title{max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:#f0f0f0}
+  .td-company{color:#6b7280;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .td-date{color:#4b5563;white-space:nowrap;font-size:12px}
+
+  /* Badges */
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+  .badge-sg{background:rgba(220,38,38,0.15);color:#f87171}
+  .badge-au{background:rgba(234,179,8,0.15);color:#fbbf24}
+  .badge-us{background:rgba(59,130,246,0.15);color:#60a5fa}
+  .badge-type{background:rgba(255,255,255,0.08);color:#9ca3af}
+  .badge-xbrl{background:rgba(34,197,94,0.15);color:#4ade80}
+  .badge-sensitive{background:rgba(239,68,68,0.15);color:#f87171}
+  .badge-jp{background:rgba(236,72,153,0.15);color:#f472b6}
+  .badge-uk{background:rgba(139,92,246,0.15);color:#a78bfa}
+
+  /* Action buttons */
+  .action-btn{
+    padding:4px 11px;border-radius:6px;
+    border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);
+    font-size:12px;cursor:pointer;color:#9ca3af;
+    font-family:'Inter',sans-serif;transition:all 0.1s;white-space:nowrap
+  }
+  .action-btn:hover{background:rgba(255,255,255,0.1);color:#e5e7eb;border-color:rgba(255,255,255,0.2)}
+
+  /* Pagination */
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-top:1px solid rgba(255,255,255,0.07)}
+  .pagination-info{font-size:12px;color:#4b5563}
+  .pagination-btns{display:flex;gap:6px}
+  .page-btn{
+    padding:5px 13px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;
+    background:rgba(255,255,255,0.04);font-size:12px;cursor:pointer;
+    color:#6b7280;font-family:'Inter',sans-serif;transition:all 0.12s
+  }
+  .page-btn:hover{background:rgba(255,255,255,0.08);color:#d1d5db;border-color:rgba(255,255,255,0.18)}
+  .page-btn:disabled{opacity:0.25;cursor:not-allowed}
+
+  /* States */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.1);border-top-color:rgba(255,255,255,0.4);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
+
+  /* Toast */
+  .toast{position:fixed;bottom:24px;right:24px;background:rgba(255,255,255,0.1);backdrop-filter:blur(16px);color:#fff;border:1px solid rgba(255,255,255,0.15);padding:10px 18px;border-radius:10px;font-size:13px;transform:translateY(80px);opacity:0;transition:all 0.25s;z-index:100}
+  .toast.show{transform:translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+<!-- Top nav -->
+<nav class="topnav">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a class="logo" href="/">
+      <div class="logo-ring"><div class="logo-dot"></div></div>
+      Global Filings
+    </a>
+    <span class="nav-sep">/</span>
+    <a class="nav-back" href="/">← Search</a>
+  </div>
+  <div class="nav-right">
+    <a class="nav-btn" href="/dashboard">Dashboard</a>
+    <a class="nav-btn" href="/docs" target="_blank">API ↗</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <!-- Company header -->
+  <div class="company-header" id="company-header">
+    <div class="company-header-left">
+      <div class="company-avatar" id="co-avatar">—</div>
+      <div class="company-info">
+        <div class="company-name" id="co-name">Loading…</div>
+        <div class="company-meta" id="co-meta"></div>
+      </div>
+    </div>
+    <div class="company-header-right" id="co-stats"></div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-card" id="filter-card">
+    <div class="filter-row" id="filter-row">
+      <span style="color:#4b5563;font-size:13px">Loading filters…</span>
+    </div>
+  </div>
+
+  <!-- Filings table -->
+  <div class="table-card">
+    <div class="table-head-row">
+      <span class="table-head-title" id="table-title">Filings</span>
+      <div class="table-actions">
+        <button class="action-btn" onclick="exportCSV()">Export CSV</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr id="table-head"></tr></thead>
+        <tbody id="table-body">
+          <tr><td colspan="8" style="text-align:center;padding:48px;color:#4b5563"><span class="spinner"></span>Loading filings…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span class="pagination-info" id="pagination-info"></span>
+      <div class="pagination-btns">
+        <button class="page-btn" id="btn-prev" onclick="changePage(-1)" disabled>← Prev</button>
+        <button class="page-btn" id="btn-next" onclick="changePage(1)" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── URL params ─────────────────────────────────────────────────────────────────
+const params       = new URLSearchParams(location.search);
+const COMPANY_NAME = params.get('name')           || '';
+const EXCHANGE     = params.get('exchange')        || '';
+const LOOKUP_KEY   = params.get('lookup_key')      || '';
+const LOOKUP_TYPE  = params.get('lookup_type')     || '';
+const TICKER       = params.get('ticker')          || '';
+const SYMBOL       = params.get('symbol')          || '';
+const SECTOR       = params.get('sector')          || '';
+const FLAG         = params.get('flag')             || '';
+const EXCH_LABEL   = params.get('exchange_label')  || EXCHANGE.toUpperCase();
+
+const PAGE_SIZE = 20;
+let currentPage  = 0;
+let totalFilings = 0;
+
+// ── Exchange colors (dark-mode palette) ────────────────────────────────────────
+const EXCH_COLORS = {
+  edgar:  { bg:'rgba(59,130,246,0.18)',  text:'#60a5fa' },
+  edinet: { bg:'rgba(236,72,153,0.18)',  text:'#f472b6' },
+  sgx:    { bg:'rgba(239,68,68,0.18)',   text:'#f87171' },
+  asx:    { bg:'rgba(234,179,8,0.18)',   text:'#fbbf24' },
+  fca:    { bg:'rgba(139,92,246,0.18)',  text:'#a78bfa' },
+};
+
+// ── Render company header ──────────────────────────────────────────────────────
+function renderHeader() {
+  document.title = COMPANY_NAME + ' — Global Filings';
+  document.getElementById('co-avatar').textContent = FLAG || COMPANY_NAME.charAt(0).toUpperCase();
+
+  document.getElementById('co-name').textContent = COMPANY_NAME;
+
+  const col = EXCH_COLORS[EXCHANGE] || { bg:'rgba(255,255,255,0.08)', text:'#9ca3af' };
+  let meta = `<span class="exch-badge" style="background:${col.bg};color:${col.text}">${FLAG} ${EXCH_LABEL}</span>`;
+  if (TICKER) meta += `<span class="ticker-tag">${TICKER}</span>`;
+  if (SECTOR) meta += `<span class="sector-tag">${SECTOR}</span>`;
+  document.getElementById('co-meta').innerHTML = meta;
+}
+
+// ── Static filter data ─────────────────────────────────────────────────────────
+const ASX_ANN_TYPES = [
+  'annual report','half-yearly report','issued capital','periodic reports',
+  'security holder details','progress report','company administration',
+  'notice of meeting','asx announcement','distribution announcement',
+  'quarterly activities report','quarterly cash flow report',
+  'other','asset acquisition & disposal',"chairman's address",
+  'letter to shareholders','takeover announcements/scheme announcements',
+];
+
+let sgxCategoryGroups = [];
+let edgarFormTypes    = [];
+let edinetDocTypes    = [];
+let fcaCategories     = [];
+
+// ── Time range ─────────────────────────────────────────────────────────────────
+let activeTimeRange = '1y';
+
+function applyTimeRange(val) {
+  activeTimeRange = val;
+  document.querySelectorAll('.tr-pill').forEach(p => p.classList.toggle('active', p.dataset.val === val));
+  currentPage = 0;
+  doSearch();
+}
+
+function dateFromRange(val) {
+  if (val === 'allTime') return { from: '', to: '' };
+  const today = new Date();
+  const to = today.toISOString().split('T')[0];
+  const d  = new Date(today);
+  if      (val === '3m') d.setMonth(d.getMonth() - 3);
+  else if (val === '6m') d.setMonth(d.getMonth() - 6);
+  else if (val === '1y') d.setFullYear(d.getFullYear() - 1);
+  else if (val === '2y') d.setFullYear(d.getFullYear() - 2);
+  else if (val === '3y') d.setFullYear(d.getFullYear() - 3);
+  else if (val === '5y') d.setFullYear(d.getFullYear() - 5);
+  return { from: d.toISOString().split('T')[0], to };
+}
+
+function trPillsHtml(defaultVal='1y') {
+  return ['3m','6m','1y','2y','3y','5y','allTime'].map(v =>
+    `<button class="tr-pill${v===defaultVal?' active':''}" data-val="${v}" onclick="applyTimeRange('${v}')" type="button">${v==='allTime'?'All':v}</button>`
+  ).join('');
+}
+
+// ── Build exchange-specific filter UI ──────────────────────────────────────────
+async function buildFilters() {
+  const row = document.getElementById('filter-row');
+
+  if (EXCHANGE === 'sgx') {
+    try {
+      const data = await fetch('/api/sgx/categories').then(r => r.json());
+      sgxCategoryGroups = data.groups || [];
+    } catch(e) {}
+
+    const catPanelHtml = sgxCategoryGroups.map(g =>
+      `<div class="drop-group-label">${g.name}</div>` +
+      (g.codes||[]).map(c =>
+        `<label class="drop-item"><input type="checkbox" value="${c.code}" onchange="updateDropCount('sgx-cat');currentPage=0;doSearch()"> ${c.label}</label>`
+      ).join('')
+    ).join('') || `<div style="padding:10px 14px;font-size:12px;color:#4b5563">No categories loaded</div>`;
+
+    row.innerHTML = `
+      <div class="field-group">
+        <label>Category</label>
+        <div class="multi-drop" id="sgx-cat-drop">
+          <button class="multi-drop-btn" id="btn-sgx-cat" onclick="toggleDrop('sgx-cat-drop')" type="button">
+            All categories <span class="drop-count" id="cnt-sgx-cat" style="display:none"></span><span class="drop-arrow">▾</span>
+          </button>
+          <div class="multi-drop-panel" id="panel-sgx-cat">${catPanelHtml}</div>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Time Range</label>
+        <div class="time-range-pills">${trPillsHtml()}</div>
+      </div>
+      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
+
+  } else if (EXCHANGE === 'asx') {
+    const annPanelHtml = ASX_ANN_TYPES.map(v =>
+      `<label class="drop-item"><input type="checkbox" value="${v.replace(/"/g,'&quot;')}" onchange="updateDropCount('ann');currentPage=0;doSearch()"> ${v}</label>`
+    ).join('');
+
+    row.innerHTML = `
+      <div class="field-group">
+        <label>Time Range</label>
+        <div class="time-range-pills">${trPillsHtml()}</div>
+      </div>
+      <div class="field-group">
+        <label>Announcement Type</label>
+        <div class="multi-drop" id="drop-ann">
+          <button class="multi-drop-btn" id="btn-ann" onclick="toggleDrop('drop-ann')" type="button">
+            All types <span class="drop-count" id="cnt-ann" style="display:none"></span><span class="drop-arrow">▾</span>
+          </button>
+          <div class="multi-drop-panel" id="panel-ann">${annPanelHtml}</div>
+        </div>
+      </div>
+      <label class="ps-toggle">
+        <input type="checkbox" id="asx-ps" onchange="currentPage=0;doSearch()"> Price Sensitive
+      </label>
+      <button class="btn btn-ghost" onclick="resetAsxFilters()" type="button">Reset</button>`;
+
+  } else if (EXCHANGE === 'edgar') {
+    try {
+      const data = await fetch('/api/edgar/form-types').then(r => r.json());
+      edgarFormTypes = data.form_types || data || [];
+    } catch(e) {}
+
+    const formOpts = edgarFormTypes.map(f => {
+      const val = f.form || f;
+      const lbl = f.label ? `${val} — ${f.label}` : val;
+      return `<option value="${val}">${lbl}</option>`;
+    }).join('');
+
+    row.innerHTML = `
+      <div class="field-group" style="min-width:240px">
+        <label>Form type</label>
+        <select id="edgar-form" onchange="currentPage=0;doSearch()">
+          <option value="">All form types</option>
+          ${formOpts}
+        </select>
+      </div>
+      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
+
+  } else if (EXCHANGE === 'edinet') {
+    try {
+      const data = await fetch('/api/edinet/doc-types').then(r => r.json());
+      edinetDocTypes = data.doc_types || data || [];
+    } catch(e) {}
+
+    const docOpts = edinetDocTypes.map(d =>
+      `<option value="${d.code||d}">${d.label || d.code || d}</option>`
+    ).join('');
+
+    const today = new Date().toISOString().split('T')[0];
+    const sixM  = new Date(); sixM.setMonth(sixM.getMonth()-6);
+    const sixMS = sixM.toISOString().split('T')[0];
+
+    row.innerHTML = `
+      <div class="field-group">
+        <label>Document type</label>
+        <select id="edinet-doctype" onchange="currentPage=0;doSearch()" style="min-width:190px">
+          <option value="">All types</option>
+          ${docOpts}
+        </select>
+      </div>
+      <div class="field-group">
+        <label>From date</label>
+        <input type="date" id="edinet-from" value="${sixMS}">
+      </div>
+      <div class="field-group">
+        <label>To date</label>
+        <input type="date" id="edinet-to" value="${today}">
+      </div>
+      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
+
+  } else if (EXCHANGE === 'fca') {
+    try {
+      const data = await fetch('/api/fca/categories').then(r => r.json());
+      fcaCategories = data.categories || data || [];
+    } catch(e) {}
+
+    const catOpts = fcaCategories.map(c =>
+      `<option value="${c.code||c}">${c.label || c.code || c}</option>`
+    ).join('');
+
+    const today = new Date().toISOString().split('T')[0];
+    const oneY  = new Date(); oneY.setFullYear(oneY.getFullYear()-1);
+    const oneYS = oneY.toISOString().split('T')[0];
+
+    row.innerHTML = `
+      <div class="field-group" style="min-width:190px">
+        <label>Filing type</label>
+        <select id="fca-cat" onchange="currentPage=0;doSearch()">
+          <option value="">All types</option>
+          ${catOpts}
+        </select>
+      </div>
+      <div class="field-group">
+        <label>From date</label>
+        <input type="date" id="fca-from" value="${oneYS}">
+      </div>
+      <div class="field-group">
+        <label>To date</label>
+        <input type="date" id="fca-to" value="${today}">
+      </div>
+      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
+  }
+}
+
+// ── Dropdown helpers ───────────────────────────────────────────────────────────
+function toggleDrop(dropId) {
+  const panel = document.querySelector(`#${dropId} .multi-drop-panel`);
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.multi-drop-panel.open').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
+}
+
+function updateDropCount(key) {
+  const cnt   = document.querySelectorAll(`#panel-${key} input:checked`).length;
+  const cntEl = document.getElementById(`cnt-${key}`);
+  const btnEl = document.getElementById(`btn-${key}`);
+  if (!cntEl || !btnEl) return;
+  cntEl.textContent = cnt;
+  cntEl.style.display = cnt > 0 ? '' : 'none';
+  btnEl.classList.toggle('has-sel', cnt > 0);
+}
+
+function resetAsxFilters() {
+  document.querySelectorAll('#filter-row input[type=checkbox]').forEach(c => c.checked = false);
+  updateDropCount('ann');
+  currentPage = 0;
+  doSearch();
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.multi-drop'))
+    document.querySelectorAll('.multi-drop-panel.open').forEach(p => p.classList.remove('open'));
+});
+
+// ── Build API URL ──────────────────────────────────────────────────────────────
+function buildUrl(page) {
+  const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
+
+  if (EXCHANGE === 'sgx') {
+    if (LOOKUP_KEY) p.set('company', LOOKUP_KEY);
+    const cats = [...document.querySelectorAll('#panel-sgx-cat input:checked')].map(c => c.value);
+    if (cats.length) p.set('cat', cats.join(','));
+    const { from, to } = dateFromRange(activeTimeRange);
+    if (from) p.set('from_date', from.replaceAll('-',''));
+    if (to)   p.set('to_date',   to.replaceAll('-',''));
+    return `/api/sgx/filings?${p}`;
+  }
+
+  if (EXCHANGE === 'asx') {
+    if (LOOKUP_TYPE === 'asx_xid') {
+      p.set('entity_xid', LOOKUP_KEY);
+    } else if (TICKER) {
+      return `/api/asx/filings/${encodeURIComponent(TICKER)}?${p}`;
+    }
+    const { from, to } = dateFromRange(activeTimeRange);
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date',   to);
+    document.querySelectorAll('#panel-ann input:checked').forEach(c => p.append('announcement_types', c.value));
+    if (document.getElementById('asx-ps')?.checked) p.set('price_sensitive', 'true');
+    return `/api/asx/market?${p}`;
+  }
+
+  if (EXCHANGE === 'edgar') {
+    const ticker = TICKER || LOOKUP_KEY;
+    if (!ticker) return null;
+    const form = document.getElementById('edgar-form')?.value;
+    if (form) p.set('form_type', form);
+    return `/api/edgar/filings/${encodeURIComponent(ticker.toUpperCase())}?${p}`;
+  }
+
+  if (EXCHANGE === 'edinet') {
+    const to   = document.getElementById('edinet-to')?.value   || new Date().toISOString().split('T')[0];
+    const from = document.getElementById('edinet-from')?.value || '';
+    const doc  = document.getElementById('edinet-doctype')?.value || '';
+    p.set('date', to);
+    p.set('company', COMPANY_NAME);
+    if (doc)  p.set('doc_type', doc);
+    if (from) p.set('from_date', from);
+    return `/api/edinet/filings?${p}`;
+  }
+
+  if (EXCHANGE === 'fca') {
+    p.set('company', COMPANY_NAME);
+    const cat  = document.getElementById('fca-cat')?.value;
+    const from = document.getElementById('fca-from')?.value;
+    const to   = document.getElementById('fca-to')?.value;
+    if (cat)  p.set('category', cat);
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return `/api/fca/filings?${p}`;
+  }
+  return null;
+}
+
+// ── Table config per exchange ──────────────────────────────────────────────────
+const TABLE_CONFIG = {
+  sgx: {
+    columns: ['Date','Company','Title','Category','Stock code','Actions'],
+    renderRow(f) {
+      const stocks = (f.issuers||[]).map(i=>i.stock_code).filter(Boolean).join(', ') || '—';
+      const ps  = f.is_price_sensitive ? ' <span class="badge badge-sensitive" style="font-size:10px">PS</span>' : '';
+      const btn = f.url ? `<button class="action-btn" onclick="window.open('${f.url}','_blank')">View ↗</button>` : '—';
+      return `<td class="td-date">${f.submission_date||f.broadcast_date_time||''}</td>
+        <td class="td-company" title="${esc2(f.issuer_name||'')}">${f.issuer_name||'—'}${ps}</td>
+        <td class="td-title" title="${esc2(f.title||'')}">${f.title||'—'}</td>
+        <td><span class="badge badge-type">${f.category_name||f.cat||'—'}</span></td>
+        <td><span class="badge badge-sg">${stocks}</span></td>
+        <td>${btn}</td>`;
+    },
+    csvRow(f) {
+      const stocks = (f.issuers||[]).map(i=>i.stock_code).filter(Boolean).join(';');
+      return [f.submission_date||'', esc(f.issuer_name), esc(f.title), f.cat||'', stocks, f.url||''].join(',');
+    },
+    csvHeader: 'Date,Company,Title,Category,Stocks,URL',
+  },
+  asx: {
+    columns: ['Date','Symbol','Company','Headline','Type','Sensitive','Actions'],
+    renderRow(f) {
+      const types = (f.announcement_types||[]).join(', ') || '—';
+      const sens  = f.is_price_sensitive
+        ? `<span class="badge badge-sensitive">PS</span>`
+        : `<span style="font-size:11px;color:#374151">—</span>`;
+      return `<td class="td-date">${f.date||''}</td>
+        <td><span class="badge badge-au">${f.symbol||''}</span></td>
+        <td class="td-company">${f.company_name||'—'}</td>
+        <td class="td-title" title="${esc2(f.headline||'')}">${f.headline||'—'}</td>
+        <td><span class="badge badge-type">${types}</span></td>
+        <td>${sens}</td>
+        <td><button class="action-btn" onclick="window.open('${f.pdf_url||'#'}','_blank')">PDF ↗</button></td>`;
+    },
+    csvRow(f) {
+      return [f.date||'', f.symbol||'', esc(f.company_name), esc(f.headline), esc((f.announcement_types||[]).join(';')), f.is_price_sensitive, f.pdf_url||''].join(',');
+    },
+    csvHeader: 'Date,Symbol,Company,Headline,Type,Sensitive,PDF',
+  },
+  edgar: {
+    columns: ['Filing date','Report date','Form','Category','XBRL','Actions'],
+    renderRow(f) {
+      const xbrl = (f.is_xbrl||f.is_inline_xbrl)
+        ? `<span class="badge badge-xbrl">XBRL</span>`
+        : `<span style="font-size:11px;color:#374151">—</span>`;
+      const view = f.document_url ? `<button class="action-btn" onclick="window.open('${f.document_url}','_blank')">View ↗</button>` : '';
+      const idx  = f.index_url    ? `<button class="action-btn" onclick="window.open('${f.index_url}','_blank')">Index</button>` : '';
+      return `<td class="td-date">${f.filing_date||''}</td>
+        <td class="td-date">${f.report_date||'—'}</td>
+        <td><span class="badge badge-us">${f.form_type||'—'}</span></td>
+        <td><span class="badge badge-type">${f.category||'—'}</span></td>
+        <td>${xbrl}</td>
+        <td style="display:flex;gap:5px">${view}${idx}</td>`;
+    },
+    csvRow(f) {
+      return [f.filing_date||'', f.report_date||'', f.form_type||'', f.category||'', f.accession_number||'', f.is_xbrl||false, f.document_url||''].join(',');
+    },
+    csvHeader: 'Filing date,Report date,Form,Category,Accession,XBRL,URL',
+  },
+  edinet: {
+    columns: ['Submitted','Sec code','Document type','Period','XBRL','PDF','Actions'],
+    renderRow(f) {
+      const xbrl = f.has_xbrl ? `<span class="badge badge-xbrl">XBRL</span>` : `<span style="font-size:11px;color:#374151">—</span>`;
+      const pdf  = f.has_pdf  ? `<span class="badge badge-jp">PDF</span>`    : `<span style="font-size:11px;color:#374151">—</span>`;
+      const eng  = f.has_english ? ' <span class="badge badge-us" style="font-size:10px">EN</span>' : '';
+      const view = f.viewer_url ? `<button class="action-btn" onclick="window.open('${f.viewer_url}','_blank')">View ↗</button>` : '';
+      const dl   = f.pdf_url   ? `<button class="action-btn" onclick="window.open('${f.pdf_url}','_blank')">DL</button>` : '';
+      const period = f.period_end ? f.period_end.slice(0,10) : (f.period_start ? f.period_start.slice(0,10) : '—');
+      return `<td class="td-date">${(f.submit_datetime||'').slice(0,16)}</td>
+        <td style="font-size:12px;color:#6b7280">${f.sec_code||'—'}</td>
+        <td><span class="badge badge-type">${f.doc_type_label||f.doc_type_code||'—'}</span></td>
+        <td class="td-date">${period}</td>
+        <td>${xbrl}</td>
+        <td>${pdf}${eng}</td>
+        <td style="display:flex;gap:5px">${view}${dl}</td>`;
+    },
+    csvRow(f) {
+      return [(f.submit_datetime||'').slice(0,16), f.sec_code||'', f.edinet_code||'', f.doc_type_code||'', esc(f.doc_description), f.period_end||'', f.has_xbrl, f.has_pdf, f.viewer_url||''].join(',');
+    },
+    csvHeader: 'Submitted,Sec code,EDINET code,Doc type,Description,Period,XBRL,PDF,URL',
+  },
+  fca: {
+    columns: ['Submitted','Headline','Category','Source','Actions'],
+    renderRow(f) {
+      const src  = f.source ? `<span class="badge badge-uk">${f.source}</span>` : '—';
+      const view = f.document_url ? `<button class="action-btn" onclick="window.open('${f.document_url}','_blank')">View ↗</button>` : '—';
+      return `<td class="td-date">${f.submitted_date||''}</td>
+        <td class="td-title" title="${esc2(f.headline||'')}">${f.headline||'—'}</td>
+        <td><span class="badge badge-type">${f.category||f.type_code||'—'}</span></td>
+        <td>${src}</td>
+        <td>${view}</td>`;
+    },
+    csvRow(f) {
+      return [f.submitted_date||'', esc(f.headline), f.type_code||'', f.source||'', f.document_url||''].join(',');
+    },
+    csvHeader: 'Submitted,Headline,Category,Source,URL',
+  },
+};
+
+// ── Render table header ────────────────────────────────────────────────────────
+function renderTableHead() {
+  const cfg = TABLE_CONFIG[EXCHANGE];
+  if (!cfg) return;
+  document.getElementById('table-head').innerHTML = cfg.columns.map(c => `<th>${c}</th>`).join('');
+  document.getElementById('table-title').textContent = `${EXCH_LABEL} Filings — ${COMPANY_NAME}`;
+}
+
+// ── Render filings ─────────────────────────────────────────────────────────────
+let lastFilings = [];
+
+function renderFilings(filings, page, total) {
+  lastFilings = filings;
+  const cfg  = TABLE_CONFIG[EXCHANGE];
+  const body = document.getElementById('table-body');
+  const cols = (cfg?.columns||[]).length || 6;
+
+  if (!filings.length) {
+    body.innerHTML = `<tr><td colspan="${cols}" style="text-align:center;padding:56px 20px;color:#4b5563">
+      <div style="font-size:28px;margin-bottom:10px">📄</div>
+      <div style="font-size:14px;font-weight:500;color:#6b7280;margin-bottom:4px">No filings found</div>
+      <div style="font-size:12px">Try adjusting the filters or expanding the time range</div>
+    </td></tr>`;
+    document.getElementById('pagination-info').textContent = '';
+    document.getElementById('btn-prev').disabled = true;
+    document.getElementById('btn-next').disabled = true;
+    return;
+  }
+
+  body.innerHTML = filings.map(f => `<tr>${cfg.renderRow(f)}</tr>`).join('');
+
+  const start = page * PAGE_SIZE + 1;
+  const end   = page * PAGE_SIZE + filings.length;
+  document.getElementById('pagination-info').textContent =
+    total > 0 ? `Showing ${start}–${end} of ${total.toLocaleString()}` : `Showing ${start}–${end}`;
+
+  document.getElementById('btn-prev').disabled = page <= 0;
+  document.getElementById('btn-next').disabled = filings.length < PAGE_SIZE;
+
+  updateStats(total || filings.length);
+}
+
+function updateStats(count) {
+  const col = EXCH_COLORS[EXCHANGE] || { bg:'rgba(255,255,255,0.08)', text:'#9ca3af' };
+  document.getElementById('co-stats').innerHTML = `
+    <div class="co-stat" style="border-color:${col.bg}">
+      <div class="co-stat-val" style="color:${col.text}">${count.toLocaleString()}</div>
+      <div class="co-stat-lbl">Filings</div>
+    </div>`;
+}
+
+// ── Main search ────────────────────────────────────────────────────────────────
+async function doSearch(page) {
+  if (page !== undefined) currentPage = page;
+  const url  = buildUrl(currentPage);
+  const cols = (TABLE_CONFIG[EXCHANGE]?.columns||[]).length || 6;
+
+  if (!url) {
+    document.getElementById('table-body').innerHTML = `<tr><td colspan="${cols}" style="text-align:center;padding:40px;color:#4b5563">Cannot build search URL — missing company identifier.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('table-body').innerHTML = `<tr><td colspan="${cols}" style="text-align:center;padding:48px;color:#4b5563"><span class="spinner"></span>Loading…</td></tr>`;
+  document.getElementById('btn-prev').disabled = true;
+  document.getElementById('btn-next').disabled = true;
+
+  try {
+    const data = await fetch(url).then(r => r.json());
+
+    let filings = [];
+    if (EXCHANGE === 'sgx')    { filings = data.filings||data.items||data||[]; totalFilings = data.total_items||data.total||0; }
+    if (EXCHANGE === 'asx')    { filings = data.filings||data.items||data||[]; totalFilings = data.total_items||data.total||0; }
+    if (EXCHANGE === 'edgar')  { filings = data.filings||data||[];              totalFilings = data.total||filings.length; }
+    if (EXCHANGE === 'edinet') { filings = data.filings||data.documents||data||[]; totalFilings = data.total||filings.length; }
+    if (EXCHANGE === 'fca')    { filings = data.filings||data.items||data||[]; totalFilings = data.total||filings.length; }
+
+    // EDINET: filter by company name client-side
+    if (EXCHANGE === 'edinet' && COMPANY_NAME) {
+      const q = COMPANY_NAME.toLowerCase();
+      filings = filings.filter(f =>
+        (f.filer_name||'').toLowerCase().includes(q) ||
+        (f.filer_name_en||'').toLowerCase().includes(q)
+      );
+      totalFilings = filings.length;
+      const start = currentPage * PAGE_SIZE;
+      filings = filings.slice(start, start + PAGE_SIZE);
+    }
+
+    renderFilings(filings, currentPage, totalFilings);
+  } catch(e) {
+    document.getElementById('table-body').innerHTML =
+      `<tr><td colspan="${cols}" style="text-align:center;padding:40px;color:#f87171">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function changePage(delta) {
+  const newPage = currentPage + delta;
+  if (newPage < 0) return;
+  doSearch(newPage);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Export CSV ─────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const cfg = TABLE_CONFIG[EXCHANGE];
+  if (!cfg || !lastFilings.length) { showToast('No filings to export'); return; }
+  const rows = [cfg.csvHeader, ...lastFilings.map(f => cfg.csvRow(f))];
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `${COMPANY_NAME.replace(/\s+/g,'_')}_${EXCHANGE}.csv`,
+  });
+  a.click();
+  showToast('CSV downloaded');
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function esc(s)  { return `"${(s||'').replace(/"/g,'""')}"` }
+function esc2(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+(async function init() {
+  if (!COMPANY_NAME || !EXCHANGE) {
+    document.getElementById('co-name').textContent = 'Company not found';
+    document.getElementById('filter-card').style.display = 'none';
+    document.getElementById('table-body').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:48px;color:#4b5563">No company selected. <a href="/" style="color:#60a5fa">Go back to search</a></td></tr>`;
+    return;
+  }
+  renderHeader();
+  renderTableHead();
+  await buildFilters();
+  doSearch(0);
+})();
+</script>
+</body>
+</html>

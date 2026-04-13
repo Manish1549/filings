@@ -280,6 +280,42 @@ def parse_submission_filings(
     return filings
 
 
+# ── Company cache for typeahead ────────────────────────────────────────────────
+_edgar_companies: list[dict] = []
+_edgar_companies_loaded: bool = False
+
+async def _ensure_edgar_companies() -> None:
+    """Load company_tickers.json once and cache for suggest endpoint."""
+    global _edgar_companies, _edgar_companies_loaded
+    if _edgar_companies_loaded:
+        return
+    try:
+        data = await edgar_get(COMPANY_TICKERS)
+        _edgar_companies = [
+            {"ticker": v.get("ticker", ""), "cik": str(v.get("cik_str", "")), "title": v.get("title", "")}
+            for v in data.values()
+        ]
+        _edgar_companies_loaded = True
+        logger.info("EDGAR company cache loaded: %d companies", len(_edgar_companies))
+    except Exception as e:
+        logger.warning("EDGAR company cache load failed: %s", e)
+
+
+@router.get("/suggest", summary="Typeahead company search for EDGAR")
+async def suggest_edgar_companies(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Fast typeahead: returns companies matching name or ticker from SEC company list."""
+    await _ensure_edgar_companies()
+    ql = q.lower()
+    # Prefer ticker prefix matches, then name contains
+    ticker_hits = [c for c in _edgar_companies if c["ticker"].lower().startswith(ql)]
+    name_hits   = [c for c in _edgar_companies if ql in c["title"].lower() and c not in ticker_hits]
+    results = (ticker_hits + name_hits)[:limit]
+    return {"query": q, "count": len(results), "results": results}
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @router.get(
     "/filings/{ticker_or_cik}",
