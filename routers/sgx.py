@@ -258,9 +258,15 @@ class SGXClient:
 
             res = await client.get(url, headers=headers, params=params)
 
-            if res.status_code == 401:
-                logger.warning("401 from SGX API — invalidating token and retrying")
+            if res.status_code in (401, 403):
+                logger.warning("%d from SGX API — invalidating token and retrying with rediscovery", res.status_code)
                 self.invalidate_token()
+                # Force CMS version rediscovery on 403 (token may be permanently revoked)
+                if res.status_code == 403:
+                    try:
+                        self._cms_version = await self._discover_cms_version(client)
+                    except Exception as e:
+                        logger.warning("CMS rediscovery failed: %s", e)
                 token = await self._get_token(client)
                 headers["authorizationtoken"] = token
                 res = await client.get(url, headers=headers, params=params)
