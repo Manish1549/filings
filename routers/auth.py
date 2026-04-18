@@ -99,11 +99,8 @@ def make_client() -> ServerClient:
 
 
 async def get_user(request: Request) -> Optional[dict]:
-    """Return the logged-in user dict, or None if unauthenticated."""
-    try:
-        return await make_client().get_user(store_options={"request": request})
-    except Exception:
-        return None
+    """Return logged-in user from Starlette session, or None."""
+    return request.session.get("user")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -122,10 +119,22 @@ async def login(request: Request):
 @router.get("/callback")
 async def callback(request: Request):
     try:
-        await make_client().complete_interactive_login(
+        result = await make_client().complete_interactive_login(
             url=str(request.url),
             store_options={"request": request},
         )
+        # SDK returns {"state_data": {"user": UserClaims, ...}, ...}
+        claims = (result.get("state_data") or {}).get("user") or {}
+        if hasattr(claims, "model_dump"):
+            claims = claims.model_dump()
+        elif hasattr(claims, "dict"):
+            claims = claims.dict()
+        request.session["user"] = {
+            "sub":     claims.get("sub", ""),
+            "name":    claims.get("name", ""),
+            "email":   claims.get("email", ""),
+            "picture": claims.get("picture", ""),
+        }
         return RedirectResponse("/")
     except Exception:
         logger.exception("Auth0 callback error")
@@ -134,6 +143,7 @@ async def callback(request: Request):
 
 @router.get("/logout")
 async def logout(request: Request):
+    request.session.clear()
     url = await make_client().logout(
         options=LogoutOptions(return_to=APP_BASE_URL),
         store_options={"request": request},
