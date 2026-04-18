@@ -30,6 +30,13 @@
   .nav-right{display:flex;gap:6px}
   .nav-btn{padding:5px 13px;border-radius:20px;font-size:12px;color:#6b7280;text-decoration:none;border:1px solid rgba(255,255,255,0.08);background:transparent;transition:all 0.15s;cursor:pointer;font-family:'Inter',sans-serif}
   .nav-btn:hover{color:#d1d5db;border-color:rgba(255,255,255,0.2);background:rgba(255,255,255,0.06)}
+  .user-pill{display:flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:20px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);text-decoration:none;transition:all 0.15s}
+  .user-pill:hover{border-color:rgba(255,255,255,0.2);background:rgba(255,255,255,0.09)}
+  .user-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover}
+  .user-avatar-fallback{width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff}
+  .user-name{font-size:12px;color:#d1d5db;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .logout-btn{padding:5px 11px;border-radius:20px;font-size:12px;color:#6b7280;text-decoration:none;border:1px solid rgba(255,255,255,0.08);transition:all 0.15s}
+  .logout-btn:hover{color:#f87171;border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.07)}
 
   /* Page */
   .page{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:28px 28px 80px}
@@ -191,9 +198,23 @@
     <span class="nav-sep">/</span>
     <a class="nav-back" href="/">← Search</a>
   </div>
-  <div class="nav-right">
+  <div class="nav-right" style="display:flex;align-items:center;gap:8px">
     <a class="nav-btn" href="/dashboard">Dashboard</a>
     <a class="nav-btn" href="/docs" target="_blank">API ↗</a>
+    {% if user %}
+      {% if user.picture %}
+        <a class="user-pill" href="/logout" title="Sign out">
+          <img class="user-avatar" src="{{ user.picture }}" referrerpolicy="no-referrer">
+          <span class="user-name">{{ user.name or user.email }}</span>
+        </a>
+      {% else %}
+        <a class="user-pill" href="/logout" title="Sign out">
+          <div class="user-avatar-fallback">{{ (user.name or user.email or '?')[0].upper() }}</div>
+          <span class="user-name">{{ user.name or user.email }}</span>
+        </a>
+      {% endif %}
+      <a class="logout-btn" href="/logout">Sign out</a>
+    {% endif %}
   </div>
 </nav>
 

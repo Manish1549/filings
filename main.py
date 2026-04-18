@@ -9,18 +9,22 @@ Run:
 
 import asyncio
 import logging
+import os
+import secrets
 
 from dotenv import load_dotenv
 load_dotenv()  # must run before routers import so EDINET_API_KEY is set at module load
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from routers import sgx, asx, edgar, edinet, fca
 from routers import suggest
+from routers import auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,9 +54,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Session middleware — SECRET_KEY must be set in env (Railway env vars)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ.get("SECRET_KEY", secrets.token_hex(32)),
+    https_only=os.environ.get("RAILWAY_ENVIRONMENT") is not None,
+)
+
 templates = Jinja2Templates(directory="templates")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
+app.include_router(auth.router,    tags=["Auth"])
 app.include_router(sgx.router,     prefix="/api/sgx",     tags=["SGX"])
 app.include_router(asx.router,     prefix="/api/asx",     tags=["ASX"])
 app.include_router(edgar.router,   prefix="/api/edgar",   tags=["EDGAR"])
@@ -61,19 +73,33 @@ app.include_router(fca.router,     prefix="/api/fca",     tags=["FCA"])
 app.include_router(suggest.router, prefix="/api/suggest", tags=["Suggest"])
 
 
+def _user(request: Request) -> dict | None:
+    return request.session.get("user")
+
+
+def _ctx(request: Request) -> dict:
+    return {"user": _user(request)}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse(request=request, name="home.html", context={})
+    if not _user(request):
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request=request, name="home.html", context=_ctx(request))
 
 
 @app.get("/company", response_class=HTMLResponse)
 async def company(request: Request):
-    return templates.TemplateResponse(request=request, name="company.html", context={})
+    if not _user(request):
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request=request, name="company.html", context=_ctx(request))
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse(request=request, name="dashboard.html", context={})
+    if not _user(request):
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request=request, name="dashboard.html", context=_ctx(request))
 
 
 @app.get("/health")
