@@ -201,6 +201,7 @@
   <div class="nav-right" style="display:flex;align-items:center;gap:8px">
     <a class="nav-btn" href="/dashboard">Dashboard</a>
     <a class="nav-btn" href="/docs" target="_blank">API ↗</a>
+    <button class="nav-btn" id="wl-btn" onclick="toggleWatchlist()" style="display:none">☆ Watchlist</button>
     {% if user %}
       {% if user.picture %}
         <a class="user-pill" href="/logout" title="Sign out">
@@ -832,6 +833,43 @@ function esc2(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
   renderTableHead();
   await buildFilters();
   doSearch(0);
+
+  // ── Watchlist ──────────────────────────────────────────────────────────────
+  const wlBtn = document.getElementById('wl-btn');
+  if (wlBtn && LOOKUP_KEY) {
+    wlBtn.style.display = 'inline-block';
+    let wlId = null;
+
+    async function syncWlBtn() {
+      try {
+        const items = await fetch('/api/watchlist').then(r => r.json());
+        const found = Array.isArray(items) ? items.find(w => w.exchange === EXCHANGE && w.lookup_key === LOOKUP_KEY) : null;
+        wlId = found ? found.id : null;
+        wlBtn.textContent = wlId ? '★ Saved' : '☆ Watchlist';
+        wlBtn.style.color = wlId ? '#fbbf24' : '';
+        wlBtn.style.borderColor = wlId ? 'rgba(251,191,36,0.3)' : '';
+      } catch(e) {}
+    }
+
+    window.toggleWatchlist = async function() {
+      if (wlId) {
+        await fetch(`/api/watchlist/${wlId}`, { method: 'DELETE' });
+        wlId = null;
+      } else {
+        const res = await fetch('/api/watchlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ exchange: EXCHANGE, lookup_key: LOOKUP_KEY, name: COMPANY_NAME, ticker: TICKER || null }),
+        });
+        if (res.ok) { const item = await res.json(); wlId = item.id; }
+      }
+      wlBtn.textContent = wlId ? '★ Saved' : '☆ Watchlist';
+      wlBtn.style.color = wlId ? '#fbbf24' : '';
+      wlBtn.style.borderColor = wlId ? 'rgba(251,191,36,0.3)' : '';
+    };
+
+    syncWlBtn();
+  }
 })();
 </script>
 </body>
