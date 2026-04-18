@@ -1,11 +1,16 @@
-import sqlite3
-from pathlib import Path
+import os
+import psycopg2
+import psycopg2.extras
 
-DB_PATH = Path(__file__).parent / "companies.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")   # safe concurrent reads
+def get_conn() -> psycopg2.extensions.connection:
+    url = DATABASE_URL
+    if not url:
+        raise RuntimeError("DATABASE_URL environment variable not set")
+    if "sslmode" not in url:
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    conn = psycopg2.connect(url)
+    conn.autocommit = False
     return conn
