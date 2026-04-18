@@ -137,6 +137,7 @@ async def callback(request: Request):
             "email":   claims.get("email", ""),
             "picture": claims.get("picture", ""),
         }
+        request.session.clear()
         request.session["user"] = user_data
         logger.info("CALLBACK OK: email=%s session_keys=%s", user_data.get("email"), list(request.session.keys()))
         return RedirectResponse("/")
