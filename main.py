@@ -13,7 +13,7 @@ import os
 import secrets
 
 from dotenv import load_dotenv
-load_dotenv()  # must run before routers import so EDINET_API_KEY is set at module load
+load_dotenv()
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -23,8 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from routers import sgx, asx, edgar, edinet, fca
-from routers import suggest
-from routers import auth
+from routers import suggest, auth, watchlist
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,16 +34,23 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Seed company DB in background — server starts immediately, seed runs async
+    from db import create_pool, init_schema
+    from db.seed import seed_all
+
+    pool = await create_pool()
+    await init_schema(pool)
+    app.state.pool = pool
+    logger.info("DB pool ready")
+
     async def _seed():
         try:
-            from db.seed import seed_all
-            await seed_all()
+            await seed_all(pool)
         except Exception as e:
             logger.warning("Company DB seed failed: %s", e)
 
     asyncio.create_task(_seed())
     yield
+    await pool.close()
 
 
 app = FastAPI(
@@ -54,7 +60,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Session middleware — SECRET_KEY must be set in env (Railway env vars)
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("SECRET_KEY", secrets.token_hex(32)),
@@ -64,18 +69,18 @@ app.add_middleware(
 templates = Jinja2Templates(directory="templates")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-app.include_router(auth.router,    tags=["Auth"])
-app.include_router(sgx.router,     prefix="/api/sgx",     tags=["SGX"])
-app.include_router(asx.router,     prefix="/api/asx",     tags=["ASX"])
-app.include_router(edgar.router,   prefix="/api/edgar",   tags=["EDGAR"])
-app.include_router(edinet.router,  prefix="/api/edinet",  tags=["EDINET"])
-app.include_router(fca.router,     prefix="/api/fca",     tags=["FCA"])
-app.include_router(suggest.router, prefix="/api/suggest", tags=["Suggest"])
+app.include_router(auth.router,      tags=["Auth"])
+app.include_router(sgx.router,       prefix="/api/sgx",       tags=["SGX"])
+app.include_router(asx.router,       prefix="/api/asx",       tags=["ASX"])
+app.include_router(edgar.router,     prefix="/api/edgar",     tags=["EDGAR"])
+app.include_router(edinet.router,    prefix="/api/edinet",    tags=["EDINET"])
+app.include_router(fca.router,       prefix="/api/fca",       tags=["FCA"])
+app.include_router(suggest.router,   prefix="/api/suggest",   tags=["Suggest"])
+app.include_router(watchlist.router, prefix="/api/watchlist", tags=["Watchlist"])
 
 
 async def _user(request: Request) -> dict | None:
-    from routers.auth import get_user
-    return await get_user(request)
+    return await auth.get_user(request)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -103,9 +108,9 @@ async def dashboard(request: Request):
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
     from routers.suggest import suggest_status
-    db = suggest_status()
+    db = await suggest_status(request.app.state.pool)
     return {"status": "ok", "markets": ["SGX", "ASX", "EDGAR", "EDINET", "FCA"],
             "company_db": db}
 

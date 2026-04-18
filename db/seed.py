@@ -2,7 +2,7 @@
 Company database seed — populates Supabase PostgreSQL from all exchange sources.
 
 Run standalone:  python db/seed.py
-Called at startup if DB is empty or older than 7 days.
+Called at startup — skips if DB is fresh (< 7 days old).
 
 Sources:
   EDGAR  — SEC company_tickers.json      (~10 K US companies)
@@ -18,8 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
-import psycopg2
-from psycopg2.extras import execute_batch
+import asyncpg
 
 _root = Path(__file__).parent.parent
 if str(_root) not in sys.path:
@@ -27,44 +26,48 @@ if str(_root) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_STATEMENTS = [
-    """
-    CREATE TABLE IF NOT EXISTS companies (
-        id             SERIAL PRIMARY KEY,
-        name           TEXT NOT NULL,
-        name_alt       TEXT,
-        ticker         TEXT,
-        exchange       TEXT NOT NULL,
-        exchange_label TEXT,
-        sector         TEXT,
-        lookup_key     TEXT NOT NULL,
-        lookup_type    TEXT NOT NULL,
-        symbol         TEXT,
-        updated_at     TEXT
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_exchange ON companies(exchange)",
-    "CREATE INDEX IF NOT EXISTS idx_ticker   ON companies(ticker)",
-    """
-    CREATE INDEX IF NOT EXISTS idx_search_gin ON companies USING GIN(
-        to_tsvector('simple',
-            COALESCE(name, '') || ' ' ||
-            COALESCE(name_alt, '') || ' ' ||
-            COALESCE(ticker, '')
-        )
-    )
-    """,
-]
-
 HEADERS = {
     "User-Agent": "GlobalFilings research@globalfilings.com",
     "Accept":     "application/json",
 }
 
+_COLUMNS = [
+    "name", "name_alt", "ticker", "exchange", "exchange_label",
+    "sector", "lookup_key", "lookup_type", "symbol", "updated_at",
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _now() -> str:
+    return datetime.utcnow().isoformat()
+
+
+async def _bulk_insert(pool: asyncpg.Pool, rows: list):
+    if not rows:
+        return
+    async with pool.acquire() as conn:
+        await conn.copy_records_to_table("companies", records=rows, columns=_COLUMNS)
+
+
+async def _is_stale(pool: asyncpg.Pool) -> bool:
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM companies")
+        if count == 0:
+            return True
+        oldest = await conn.fetchval("SELECT MIN(updated_at) FROM companies")
+    if not oldest:
+        return True
+    try:
+        age = datetime.utcnow() - datetime.fromisoformat(str(oldest))
+        return age > timedelta(days=7)
+    except Exception:
+        return True
+
 
 # ── Per-exchange seeders ───────────────────────────────────────────────────────
 
-async def seed_edgar(conn, client: httpx.AsyncClient) -> int:
+async def seed_edgar(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
     r = await client.get("https://www.sec.gov/files/company_tickers.json", headers=HEADERS)
     r.raise_for_status()
     rows = []
@@ -76,11 +79,11 @@ async def seed_edgar(conn, client: httpx.AsyncClient) -> int:
             continue
         rows.append((title, None, ticker or None, "edgar", "US", None,
                      cik, "edgar_cik", ticker or None, _now()))
-    await asyncio.to_thread(_bulk_insert, conn, rows)
+    await _bulk_insert(pool, rows)
     return len(rows)
 
 
-async def seed_edinet(conn) -> int:
+async def seed_edinet(pool: asyncpg.Pool) -> int:
     from edinet_tools.entity import _get_classifier
     classifier = await asyncio.to_thread(_get_classifier)
     entities   = classifier._edinet_entities
@@ -94,20 +97,15 @@ async def seed_edinet(conn) -> int:
         if not name:
             continue
         rows.append((
-            name,
-            name_jp if name_en else None,
-            ticker,
-            "edinet", "TSE",
-            sector,
-            edinet_code, "edinet_code",
-            ticker,
-            _now(),
+            name, name_jp if name_en else None, ticker,
+            "edinet", "TSE", sector,
+            edinet_code, "edinet_code", ticker, _now(),
         ))
-    await asyncio.to_thread(_bulk_insert, conn, rows)
+    await _bulk_insert(pool, rows)
     return len(rows)
 
 
-async def seed_sgx(conn) -> int:
+async def seed_sgx(pool: asyncpg.Pool) -> int:
     from routers.sgx import _sgx, SGX_API_BASE
 
     sec_data   = await _sgx.get(SGX_API_BASE + "/securitylist")
@@ -138,27 +136,21 @@ async def seed_sgx(conn) -> int:
             continue
         rows.append((name, None, ticker, "sgx", "SGX", None,
                      name.upper(), "sgx_name", ticker, _now()))
-    await asyncio.to_thread(_bulk_insert, conn, rows)
+    await _bulk_insert(pool, rows)
     return len(rows)
 
 
-async def seed_asx(conn, client: httpx.AsyncClient) -> int:
-    asx_headers = {
-        **HEADERS,
-        "Origin":  "https://www.asx.com.au",
-        "Referer": "https://www.asx.com.au/",
-    }
+async def seed_asx(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
+    asx_headers = {**HEADERS, "Origin": "https://www.asx.com.au", "Referer": "https://www.asx.com.au/"}
     try:
         r = await client.get(
             "https://asx.api.markitdigital.com/asx-research/1.0/companies/directory/file",
             headers=asx_headers,
         )
         r.raise_for_status()
-        count = await asyncio.to_thread(_parse_asx_csv, conn, r.text)
-        return count
+        return await _parse_asx_csv(pool, r.text)
     except Exception:
         pass
-
     try:
         r = await client.get(
             "https://asx.api.markitdigital.com/asx-research/1.0/companies/directory",
@@ -179,107 +171,48 @@ async def seed_asx(conn, client: httpx.AsyncClient) -> int:
                 continue
             rows.append((name, None, ticker or None, "asx", "ASX", sector,
                          xid, "asx_xid", ticker or None, _now()))
-        await asyncio.to_thread(_bulk_insert, conn, rows)
+        await _bulk_insert(pool, rows)
         return len(rows)
     except Exception as e:
         logger.warning("ASX seed failed: %s", e)
         return 0
 
 
-def _parse_asx_csv(conn, text: str) -> int:
+async def _parse_asx_csv(pool: asyncpg.Pool, text: str) -> int:
     import csv, io
     rows = []
-    reader = csv.DictReader(io.StringIO(text))
-    for row in reader:
-        name   = (row.get("Company name") or row.get("CompanyName") or
-                  row.get("company_name") or "").strip()
-        ticker = (row.get("ASX code") or row.get("ASXCode") or
-                  row.get("ticker") or "").strip().upper()
-        sector = (row.get("GICS industry group") or row.get("Sector") or
-                  row.get("sector") or None)
+    for row in csv.DictReader(io.StringIO(text)):
+        name   = (row.get("Company name") or row.get("CompanyName") or "").strip()
+        ticker = (row.get("ASX code") or row.get("ASXCode") or "").strip().upper()
+        sector = row.get("GICS industry group") or row.get("Sector") or None
         if not name or not ticker:
             continue
         rows.append((name, None, ticker, "asx", "ASX", sector,
                      ticker, "asx_ticker", ticker, _now()))
-    _bulk_insert(conn, rows)
+    await _bulk_insert(pool, rows)
     return len(rows)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _now() -> str:
-    return datetime.utcnow().isoformat()
-
-
-def _bulk_insert(conn, rows: list):
-    if not rows:
-        return
-    with conn.cursor() as cur:
-        execute_batch(
-            cur,
-            """INSERT INTO companies
-               (name, name_alt, ticker, exchange, exchange_label, sector,
-                lookup_key, lookup_type, symbol, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            rows,
-            page_size=500,
-        )
-    conn.commit()
-
-
-def _is_stale(conn) -> bool:
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM companies")
-        count = cur.fetchone()[0]
-        if count == 0:
-            return True
-        cur.execute("SELECT MIN(updated_at) FROM companies")
-        oldest = cur.fetchone()[0]
-    if not oldest:
-        return True
-    try:
-        age = datetime.utcnow() - datetime.fromisoformat(oldest)
-        return age > timedelta(days=7)
-    except Exception:
-        return True
-
-
-def _apply_schema(conn):
-    with conn.cursor() as cur:
-        for stmt in SCHEMA_STATEMENTS:
-            cur.execute(stmt)
-    conn.commit()
 
 
 # ── Main seed function ────────────────────────────────────────────────────────
 
-async def seed_all(force: bool = False) -> dict:
-    from db import get_conn
-    conn = await asyncio.to_thread(get_conn)
-
-    await asyncio.to_thread(_apply_schema, conn)
-
-    if not force and not await asyncio.to_thread(_is_stale, conn):
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM companies")
-            count = cur.fetchone()[0]
+async def seed_all(pool: asyncpg.Pool, force: bool = False) -> dict:
+    if not force and not await _is_stale(pool):
+        count = await pool.fetchval("SELECT COUNT(*) FROM companies")
         logger.info("Company DB up-to-date (%d companies). Skipping seed.", count)
-        conn.close()
         return {}
 
     logger.info("Seeding company database%s…", " (forced)" if force else "")
 
-    with conn.cursor() as cur:
-        cur.execute("TRUNCATE TABLE companies RESTART IDENTITY")
-    conn.commit()
+    async with pool.acquire() as conn:
+        await conn.execute("TRUNCATE TABLE companies RESTART IDENTITY")
 
     counts: dict[str, int] = {}
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         for label, coro in [
-            ("edgar",  seed_edgar(conn, client)),
-            ("edinet", seed_edinet(conn)),
-            ("sgx",    seed_sgx(conn)),
-            ("asx",    seed_asx(conn, client)),
+            ("edgar",  seed_edgar(pool, client)),
+            ("edinet", seed_edinet(pool)),
+            ("sgx",    seed_sgx(pool)),
+            ("asx",    seed_asx(pool, client)),
         ]:
             try:
                 counts[label] = await coro
@@ -288,15 +221,22 @@ async def seed_all(force: bool = False) -> dict:
                 logger.warning("%-8s seed failed: %s", label.upper(), e)
                 counts[label] = 0
 
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM companies")
-        total = cur.fetchone()[0]
+    total = await pool.fetchval("SELECT COUNT(*) FROM companies")
     logger.info("Seed complete — %d total companies in DB", total)
-    conn.close()
     return counts
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s — %(message)s")
-    asyncio.run(seed_all(force=True))
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s — %(message)s")
+
+    async def _main():
+        from db import create_pool, init_schema
+        pool = await create_pool()
+        await init_schema(pool)
+        await seed_all(pool, force=True)
+        await pool.close()
+
+    asyncio.run(_main())

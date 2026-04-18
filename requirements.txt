@@ -1,5 +1,5 @@
 # dependencies
-psycopg2-binary
+asyncpg
 fastapi
 uvicorn[standard]
 httpx
