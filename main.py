@@ -73,33 +73,33 @@ app.include_router(fca.router,     prefix="/api/fca",     tags=["FCA"])
 app.include_router(suggest.router, prefix="/api/suggest", tags=["Suggest"])
 
 
-def _user(request: Request) -> dict | None:
-    return request.session.get("user")
-
-
-def _ctx(request: Request) -> dict:
-    return {"user": _user(request)}
+async def _user(request: Request) -> dict | None:
+    from routers.auth import get_user
+    return await get_user(request)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    if not _user(request):
+    user = await _user(request)
+    if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse(request=request, name="home.html", context=_ctx(request))
+    return templates.TemplateResponse(request=request, name="home.html", context={"user": user})
 
 
 @app.get("/company", response_class=HTMLResponse)
 async def company(request: Request):
-    if not _user(request):
+    user = await _user(request)
+    if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse(request=request, name="company.html", context=_ctx(request))
+    return templates.TemplateResponse(request=request, name="company.html", context={"user": user})
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    if not _user(request):
+    user = await _user(request)
+    if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse(request=request, name="dashboard.html", context=_ctx(request))
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={"user": user})
 
 
 @app.get("/health")
