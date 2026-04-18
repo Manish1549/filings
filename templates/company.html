@@ -55,9 +55,12 @@
   .co-stat{text-align:center;padding:10px 20px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;min-width:90px}
   .co-stat-val{font-size:20px;font-weight:600;color:#fff}
   .co-stat-lbl{font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px}
+  .wl-add-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#d1d5db;font-family:'Inter',sans-serif;transition:all 0.15s;align-self:flex-start}
+  .wl-add-btn:hover{border-color:rgba(251,191,36,0.4);color:#fbbf24;background:rgba(251,191,36,0.07)}
+  .wl-add-btn.saved{border-color:rgba(251,191,36,0.4);color:#fbbf24;background:rgba(251,191,36,0.08)}
 
   /* Filter card */
-  .filter-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px 22px;margin-bottom:16px;backdrop-filter:blur(8px)}
+  .filter-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px 22px;margin-bottom:16px;backdrop-filter:blur(8px);position:relative;z-index:10}
   .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
   .field-group{display:flex;flex-direction:column;gap:5px}
   .field-group label{font-size:10px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:0.6px}
@@ -231,6 +234,9 @@
       </div>
     </div>
     <div class="company-header-right" id="co-stats"></div>
+    <button class="wl-add-btn" id="wl-header-btn" onclick="toggleWatchlist()" style="display:none">
+      <span id="wl-header-icon">☆</span> <span id="wl-header-label">Add to Watchlist</span>
+    </button>
   </div>
 
   <!-- Filters -->
@@ -836,18 +842,34 @@ function esc2(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
 
   // ── Watchlist ──────────────────────────────────────────────────────────────
   const wlBtn = document.getElementById('wl-btn');
-  if (wlBtn && LOOKUP_KEY) {
-    wlBtn.style.display = 'inline-block';
+  const wlHeaderBtn = document.getElementById('wl-header-btn');
+  const wlHeaderIcon = document.getElementById('wl-header-icon');
+  const wlHeaderLabel = document.getElementById('wl-header-label');
+  if (LOOKUP_KEY) {
+    if (wlBtn) wlBtn.style.display = 'inline-block';
+    if (wlHeaderBtn) wlHeaderBtn.style.display = 'inline-flex';
     let wlId = null;
+
+    function _applyWlState() {
+      const saved = !!wlId;
+      if (wlBtn) {
+        wlBtn.textContent = saved ? '★ Saved' : '☆ Watchlist';
+        wlBtn.style.color = saved ? '#fbbf24' : '';
+        wlBtn.style.borderColor = saved ? 'rgba(251,191,36,0.3)' : '';
+      }
+      if (wlHeaderBtn) {
+        wlHeaderIcon.textContent = saved ? '★' : '☆';
+        wlHeaderLabel.textContent = saved ? 'Saved to Watchlist' : 'Add to Watchlist';
+        wlHeaderBtn.classList.toggle('saved', saved);
+      }
+    }
 
     async function syncWlBtn() {
       try {
         const items = await fetch('/api/watchlist').then(r => r.json());
         const found = Array.isArray(items) ? items.find(w => w.exchange === EXCHANGE && w.lookup_key === LOOKUP_KEY) : null;
         wlId = found ? found.id : null;
-        wlBtn.textContent = wlId ? '★ Saved' : '☆ Watchlist';
-        wlBtn.style.color = wlId ? '#fbbf24' : '';
-        wlBtn.style.borderColor = wlId ? 'rgba(251,191,36,0.3)' : '';
+        _applyWlState();
       } catch(e) {}
     }
 
@@ -863,9 +885,7 @@ function esc2(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') }
         });
         if (res.ok) { const item = await res.json(); wlId = item.id; }
       }
-      wlBtn.textContent = wlId ? '★ Saved' : '☆ Watchlist';
-      wlBtn.style.color = wlId ? '#fbbf24' : '';
-      wlBtn.style.borderColor = wlId ? 'rgba(251,191,36,0.3)' : '';
+      _applyWlState();
     };
 
     syncWlBtn();
