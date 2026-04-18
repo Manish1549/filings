@@ -119,8 +119,10 @@ async def login(request: Request):
 @router.get("/callback")
 async def callback(request: Request):
     try:
+        callback_url = str(request.url)
+        logger.info("CALLBACK URL: %s | redirect_uri configured: %s", callback_url, APP_BASE_URL + "/callback")
         result = await make_client().complete_interactive_login(
-            url=str(request.url),
+            url=callback_url,
             store_options={"request": request},
         )
         # SDK returns {"state_data": {"user": UserClaims, ...}, ...}
