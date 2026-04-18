@@ -58,7 +58,7 @@ app = FastAPI(
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("SECRET_KEY", secrets.token_hex(32)),
-    https_only=os.environ.get("RAILWAY_ENVIRONMENT") is not None,
+    https_only=False,
 )
 
 templates = Jinja2Templates(directory="templates")
