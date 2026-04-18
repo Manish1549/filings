@@ -153,6 +153,11 @@ async def logout(request: Request):
     return RedirectResponse(url)
 
 
+@router.get("/debug-session")
+async def debug_session(request: Request):
+    return {"session_keys": list(request.session.keys()), "user": request.session.get("user"), "cookies": list(request.cookies.keys())}
+
+
 @router.get("/me")
 async def me(request: Request):
     user = await get_user(request)
