@@ -129,12 +129,14 @@ async def callback(request: Request):
             claims = claims.model_dump()
         elif hasattr(claims, "dict"):
             claims = claims.dict()
-        request.session["user"] = {
+        user_data = {
             "sub":     claims.get("sub", ""),
             "name":    claims.get("name", ""),
             "email":   claims.get("email", ""),
             "picture": claims.get("picture", ""),
         }
+        request.session["user"] = user_data
+        logger.info("CALLBACK OK: email=%s session_keys=%s", user_data.get("email"), list(request.session.keys()))
         return RedirectResponse("/")
     except Exception:
         logger.exception("Auth0 callback error")
