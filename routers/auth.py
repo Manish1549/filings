@@ -138,9 +138,10 @@ async def callback(request: Request):
         request.session["user"] = user_data
         logger.info("CALLBACK OK: email=%s session_keys=%s", user_data.get("email"), list(request.session.keys()))
         return RedirectResponse("/")
-    except Exception:
+    except Exception as e:
         logger.exception("Auth0 callback error")
-        return RedirectResponse("/login")
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(f"AUTH0 CALLBACK ERROR: {type(e).__name__}: {e}", status_code=500)
 
 
 @router.get("/logout")
