@@ -81,7 +81,6 @@ async def _user(request: Request) -> dict | None:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     user = await _user(request)
-    logger.info("HOME: session_keys=%s user=%s", list(request.session.keys()), bool(user))
     if not user:
         return RedirectResponse("/login")
     return templates.TemplateResponse(request=request, name="home.html", context={"user": user})

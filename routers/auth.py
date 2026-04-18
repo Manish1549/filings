@@ -119,10 +119,8 @@ async def login(request: Request):
 @router.get("/callback")
 async def callback(request: Request):
     try:
-        callback_url = str(request.url)
-        logger.info("CALLBACK URL: %s | redirect_uri configured: %s", callback_url, APP_BASE_URL + "/callback")
         result = await make_client().complete_interactive_login(
-            url=callback_url,
+            url=str(request.url),
             store_options={"request": request},
         )
         # SDK returns {"state_data": {"user": UserClaims, ...}, ...}
@@ -139,12 +137,10 @@ async def callback(request: Request):
         }
         request.session.clear()
         request.session["user"] = user_data
-        logger.info("CALLBACK OK: email=%s session_keys=%s", user_data.get("email"), list(request.session.keys()))
         return RedirectResponse("/")
-    except Exception as e:
+    except Exception:
         logger.exception("Auth0 callback error")
-        from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(f"AUTH0 CALLBACK ERROR: {type(e).__name__}: {e}", status_code=500)
+        return RedirectResponse("/login")
 
 
 @router.get("/logout")
@@ -156,10 +152,6 @@ async def logout(request: Request):
     )
     return RedirectResponse(url)
 
-
-@router.get("/debug-session")
-async def debug_session(request: Request):
-    return {"session_keys": list(request.session.keys()), "user": request.session.get("user"), "cookies": list(request.cookies.keys())}
 
 
 @router.get("/me")
