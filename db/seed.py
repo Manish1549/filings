@@ -55,6 +55,13 @@ async def _is_stale(pool: asyncpg.Pool) -> bool:
         count = await conn.fetchval("SELECT COUNT(*) FROM companies")
         if count == 0:
             return True
+        # If any expected exchange has 0 companies, seed is incomplete
+        by_exchange = await conn.fetch(
+            "SELECT exchange, COUNT(*) AS n FROM companies GROUP BY exchange"
+        )
+        seeded = {r["exchange"] for r in by_exchange if r["n"] > 0}
+        if not {"edgar", "edinet", "sgx", "asx"}.issubset(seeded):
+            return True
         oldest = await conn.fetchval("SELECT MIN(updated_at) FROM companies")
     if not oldest:
         return True
