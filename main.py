@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_seed())
 
-    from alerts.sgx_poller import start_poller, stop_poller
+    from alerts.poller import start_poller, stop_poller
     start_poller(pool)
 
     yield
