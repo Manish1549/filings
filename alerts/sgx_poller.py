@@ -178,23 +178,30 @@ async def _poll(pool) -> None:
 
         logger.info("SGX poller: %d new filing(s) for %s", len(new_filings), company_name)
 
-        # Update Redis to the newest filing's timestamp before sending emails
         newest_ms = max(f["broadcast_ms"] for f in new_filings)
-        await r.set(key, str(newest_ms))
 
-        # Get watchers and notify
+        # Send emails first — update Redis only after all succeed
+        # If email fails, Redis stays at old timestamp so next cycle retries
         users = await _get_users_for_company(pool, lookup_key)
+        all_sent = True
+        loop = asyncio.get_event_loop()
         for user in users:
             email = user.get("email")
             if not email:
                 continue
-            # Run blocking SMTP in thread pool so we don't block the event loop
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
+            sent = await loop.run_in_executor(
                 None,
                 send_filing_alert,
                 email, company_name, ticker, new_filings,
             )
+            if not sent:
+                all_sent = False
+                logger.error("SGX poller: email failed for %s → %s", company_name, email)
+
+        if all_sent:
+            await r.set(key, str(newest_ms))
+        else:
+            logger.warning("SGX poller: skipping Redis update for %s — will retry next cycle", company_name)
 
         # Small delay between companies to be polite to SGX API
         await asyncio.sleep(1)
