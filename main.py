@@ -49,7 +49,13 @@ async def lifespan(app: FastAPI):
             logger.warning("Company DB seed failed: %s", e)
 
     asyncio.create_task(_seed())
+
+    from alerts.sgx_poller import start_poller, stop_poller
+    start_poller(pool)
+
     yield
+
+    stop_poller()
     await pool.close()
 
 

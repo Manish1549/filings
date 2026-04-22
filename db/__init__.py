@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS watchlist (
     UNIQUE(user_sub, exchange, lookup_key)
 );
 CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_sub);
+
+CREATE TABLE IF NOT EXISTS users (
+    sub        TEXT PRIMARY KEY,
+    email      TEXT NOT NULL,
+    name       TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 """
 
 

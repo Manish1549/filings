@@ -137,6 +137,21 @@ async def callback(request: Request):
         }
         request.session.clear()
         request.session["user"] = user_data
+
+        # Upsert user email so alert poller can look it up
+        try:
+            pool = request.app.state.pool
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO users (sub, email, name, updated_at)
+                       VALUES ($1, $2, $3, NOW())
+                       ON CONFLICT (sub) DO UPDATE
+                       SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = NOW()""",
+                    user_data["sub"], user_data["email"], user_data["name"],
+                )
+        except Exception:
+            logger.warning("Failed to upsert user record", exc_info=True)
+
         return RedirectResponse("/")
     except Exception:
         logger.exception("Auth0 callback error")
