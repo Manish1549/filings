@@ -216,11 +216,10 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
         "User-Agent": "GlobalFilings research@globalfilings.com",
     }
 
-    rows  = []
-    page  = 1
-    limit = 5000  # max companies to seed
+    rows = []
+    page = 1
 
-    while len(rows) < limit:
+    while True:
         try:
             res = await client.get(
                 "https://api.financialreports.eu/companies/",
