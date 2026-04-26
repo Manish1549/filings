@@ -182,7 +182,7 @@
   </div>
 
   <h1 class="hero-title">Search regulatory<br>filings worldwide</h1>
-  <p class="hero-sub">Search 27,000+ companies across five major exchanges. Click any result to view filings instantly.</p>
+  <p class="hero-sub">Search 35,000+ companies across six major exchanges. Click any result to view filings instantly.</p>
 
   <div class="search-container">
     <!-- Exchange filter pills -->
@@ -193,6 +193,7 @@
       <div class="exch-pill" data-market="edgar" onclick="setMarket('edgar',this)">🇺🇸 EDGAR</div>
       <div class="exch-pill" data-market="edinet" onclick="setMarket('edinet',this)">🇯🇵 EDINET</div>
       <div class="exch-pill" data-market="fca" onclick="setMarket('fca',this)">🇬🇧 FCA</div>
+      <div class="exch-pill" data-market="europe" onclick="setMarket('europe',this)">🇪🇺 Europe</div>
     </div>
 
     <!-- Search input -->
@@ -249,13 +250,14 @@
 </div>
 
 <script>
-const EXCH_FLAG  = { edgar:'🇺🇸', edinet:'🇯🇵', sgx:'🇸🇬', asx:'🇦🇺', fca:'🇬🇧' };
+const EXCH_FLAG  = { edgar:'🇺🇸', edinet:'🇯🇵', sgx:'🇸🇬', asx:'🇦🇺', fca:'🇬🇧', europe:'🇪🇺' };
 const EXCH_COLOR = {
-  edgar: { bg:'rgba(29,78,216,0.18)',   text:'#60a5fa' },
-  edinet:{ bg:'rgba(220,38,38,0.18)',   text:'#f87171' },
-  sgx:   { bg:'rgba(180,83,9,0.18)',    text:'#fb923c' },
-  asx:   { bg:'rgba(21,128,61,0.18)',   text:'#4ade80' },
-  fca:   { bg:'rgba(124,58,237,0.18)',  text:'#a78bfa' },
+  edgar:  { bg:'rgba(29,78,216,0.18)',   text:'#60a5fa' },
+  edinet: { bg:'rgba(220,38,38,0.18)',   text:'#f87171' },
+  sgx:    { bg:'rgba(180,83,9,0.18)',    text:'#fb923c' },
+  asx:    { bg:'rgba(21,128,61,0.18)',   text:'#4ade80' },
+  fca:    { bg:'rgba(124,58,237,0.18)',  text:'#a78bfa' },
+  europe: { bg:'rgba(37,99,235,0.18)',   text:'#93c5fd' },
 };
 
 let currentMarket = 'all';

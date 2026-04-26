@@ -299,6 +299,7 @@ const EXCH_COLORS = {
   sgx:    { bg:'rgba(239,68,68,0.18)',   text:'#f87171' },
   asx:    { bg:'rgba(234,179,8,0.18)',   text:'#fbbf24' },
   fca:    { bg:'rgba(139,92,246,0.18)',  text:'#a78bfa' },
+  europe: { bg:'rgba(37,99,235,0.18)',   text:'#93c5fd' },
 };
 
 // ── Render company header ──────────────────────────────────────────────────────
@@ -502,6 +503,35 @@ async function buildFilters() {
         <input type="date" id="fca-to" value="${today}">
       </div>
       <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
+
+  } else if (EXCHANGE === 'europe') {
+    const today = new Date().toISOString().split('T')[0];
+    const oneY  = new Date(); oneY.setFullYear(oneY.getFullYear()-1);
+    const oneYS = oneY.toISOString().split('T')[0];
+
+    row.innerHTML = `
+      <div class="field-group">
+        <label>From date</label>
+        <input type="date" id="eu-from" value="${oneYS}">
+      </div>
+      <div class="field-group">
+        <label>To date</label>
+        <input type="date" id="eu-to" value="${today}">
+      </div>
+      <div class="field-group">
+        <label>Language</label>
+        <select id="eu-lang" onchange="currentPage=0;doSearch()">
+          <option value="">Any</option>
+          <option value="en">English</option>
+          <option value="de">German</option>
+          <option value="fr">French</option>
+          <option value="it">Italian</option>
+          <option value="es">Spanish</option>
+          <option value="nl">Dutch</option>
+          <option value="sv">Swedish</option>
+        </select>
+      </div>
+      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
   }
 }
 
@@ -592,6 +622,18 @@ function buildUrl(page) {
     if (to)   p.set('to_date', to);
     return `/api/fca/filings?${p}`;
   }
+
+  if (EXCHANGE === 'europe') {
+    if (LOOKUP_KEY) p.set('company', LOOKUP_KEY);
+    const from = document.getElementById('eu-from')?.value;
+    const to   = document.getElementById('eu-to')?.value;
+    const lang = document.getElementById('eu-lang')?.value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    if (lang) p.set('language', lang);
+    return `/api/europe/filings?${p}`;
+  }
+
   return null;
 }
 
@@ -694,6 +736,25 @@ const TABLE_CONFIG = {
     },
     csvHeader: 'Submitted,Headline,Category,Source,URL',
   },
+  europe: {
+    columns: ['Released','Company','Title','Type','Period','Lang','Actions'],
+    renderRow(f) {
+      const view   = f.document_url ? `<button class="action-btn" onclick="window.open('${f.document_url}','_blank')">View ↗</button>` : '—';
+      const period = f.period_ending_date ? f.period_ending_date.slice(0,10) : (f.fiscal_year ? `FY${f.fiscal_year}` : '—');
+      const lang   = f.language ? `<span class="badge badge-type" style="font-size:10px">${f.language.slice(0,2).toUpperCase()}</span>` : '—';
+      return `<td class="td-date">${(f.release_datetime||f.added_to_platform||'').slice(0,10)}</td>
+        <td class="td-company">${f.company_name||'—'}</td>
+        <td class="td-title" title="${esc2(f.title||'')}">${f.title||'—'}</td>
+        <td><span class="badge badge-type">${f.filing_type||f.category||'—'}</span></td>
+        <td class="td-date">${period}</td>
+        <td>${lang}</td>
+        <td>${view}</td>`;
+    },
+    csvRow(f) {
+      return [(f.release_datetime||'').slice(0,10), esc(f.company_name), esc(f.title), f.filing_type||'', f.fiscal_year||'', f.language||'', f.document_url||''].join(',');
+    },
+    csvHeader: 'Released,Company,Title,Type,Fiscal year,Language,URL',
+  },
 };
 
 // ── Render table header ────────────────────────────────────────────────────────
@@ -771,6 +832,7 @@ async function doSearch(page) {
     if (EXCHANGE === 'edgar')  { filings = data.filings||data||[];              totalFilings = data.total||filings.length; }
     if (EXCHANGE === 'edinet') { filings = data.filings||data.documents||data||[]; totalFilings = data.total||filings.length; }
     if (EXCHANGE === 'fca')    { filings = data.filings||data.items||data||[]; totalFilings = data.total||filings.length; }
+    if (EXCHANGE === 'europe') { filings = data.filings||data.results||data||[]; totalFilings = data.total||data.count||filings.length; }
 
     // EDINET: filter by company name client-side
     if (EXCHANGE === 'edinet' && COMPANY_NAME) {
