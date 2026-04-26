@@ -518,27 +518,113 @@ async def _poll_fca(pool, r: aioredis.Redis, companies: list[dict]) -> None:
         await asyncio.sleep(0.5)
 
 
+# ── Europe (financialreports.eu) ──────────────────────────────────────────────
+
+async def _poll_europe(pool, r: aioredis.Redis, companies: list[dict]) -> None:
+    """
+    Europe polling uses added_to_platform_from filter — no manual timestamp comparison.
+    One API call per company, Redis stores last added_to_platform ISO datetime.
+    """
+    from datetime import datetime, timezone
+
+    europe_api_key = os.environ.get("FINANCIALREPORTS_API_KEY", "")
+    if not europe_api_key:
+        return
+
+    headers  = {
+        "X-API-Key": europe_api_key,
+        "Accept":    "application/json",
+        "User-Agent": "GlobalFilings research@globalfilings.com",
+    }
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    for company in companies:
+        lookup_key   = company["lookup_key"]   # company ID from financialreports.eu
+        company_name = company["name"]
+        ticker       = company.get("ticker")
+        key          = _rkey("europe", lookup_key)
+
+        last_dt = await r.get(key)
+        if last_dt is None:
+            await r.set(key, now_iso)
+            continue
+
+        try:
+            params = {
+                "company":               lookup_key,
+                "added_to_platform_from": last_dt,
+                "ordering":              "-added_to_platform",
+                "page_size":             10,
+                "view":                  "summary",
+            }
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+                res = await client.get(
+                    "https://api.financialreports.eu/filings/",
+                    headers=headers, params=params,
+                )
+                if res.status_code == 429:
+                    logger.warning("Europe API rate limit hit — skipping cycle")
+                    return
+                if res.status_code >= 400:
+                    continue
+                results = res.json().get("results") or []
+        except Exception as e:
+            logger.warning("Europe fetch error for %s: %s", company_name, e)
+            continue
+
+        new_filings = []
+        newest_dt   = last_dt
+
+        for f in results:
+            added = f.get("added_to_platform", "")
+            if not added or added <= last_dt:
+                continue
+            ft  = f.get("filing_type") or {}
+            cat = f.get("category") or {}
+            new_filings.append({
+                "title":           f.get("title") or "Filing",
+                "category_name":   (ft.get("name") if isinstance(ft, dict) else str(ft)) or
+                                   (cat.get("name") if isinstance(cat, dict) else str(cat)) or "",
+                "submission_date": (f.get("release_datetime") or added)[:16].replace("T", " "),
+                "url":             f.get("document_url") or f.get("viewer_url") or "",
+                "_ts":             added,
+            })
+            if added > newest_dt:
+                newest_dt = added
+
+        if not new_filings:
+            continue
+
+        logger.info("Europe: %d new filing(s) for %s", len(new_filings), company_name)
+        ok = await _notify(pool, "europe", lookup_key, company_name, ticker, new_filings)
+        if ok:
+            await r.set(key, newest_dt)
+
+        await asyncio.sleep(0.3)
+
+
 # ── Main poll cycle ────────────────────────────────────────────────────────────
 
 async def _poll(pool) -> None:
     r = await _get_redis()
 
     # Fetch all watched companies per exchange in parallel DB queries
-    sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos = await asyncio.gather(
+    sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos, europe_cos = await asyncio.gather(
         _get_watched(pool, "sgx"),
         _get_watched(pool, "asx"),
         _get_watched(pool, "edgar"),
         _get_watched(pool, "edinet"),
         _get_watched(pool, "fca"),
+        _get_watched(pool, "europe"),
     )
 
-    total = sum(len(x) for x in [sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos])
+    total = sum(len(x) for x in [sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos, europe_cos])
     if total == 0:
         return
 
     logger.debug(
-        "Poll cycle: SGX=%d ASX=%d EDGAR=%d EDINET=%d FCA=%d",
-        len(sgx_cos), len(asx_cos), len(edgar_cos), len(edinet_cos), len(fca_cos),
+        "Poll cycle: SGX=%d ASX=%d EDGAR=%d EDINET=%d FCA=%d Europe=%d",
+        len(sgx_cos), len(asx_cos), len(edgar_cos), len(edinet_cos), len(fca_cos), len(europe_cos),
     )
 
     # Run all exchange pollers — sequential to avoid hammering APIs simultaneously
@@ -552,6 +638,8 @@ async def _poll(pool) -> None:
         await _poll_edinet(pool, r, edinet_cos)
     if fca_cos:
         await _poll_fca(pool, r, fca_cos)
+    if europe_cos:
+        await _poll_europe(pool, r, europe_cos)
 
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────

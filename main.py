@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
-from routers import sgx, asx, edgar, edinet, fca
+from routers import sgx, asx, edgar, edinet, fca, europe
 from routers import suggest, auth, watchlist
 
 logging.basicConfig(
@@ -80,6 +80,7 @@ app.include_router(sgx.router,       prefix="/api/sgx",       tags=["SGX"])
 app.include_router(asx.router,       prefix="/api/asx",       tags=["ASX"])
 app.include_router(edgar.router,     prefix="/api/edgar",     tags=["EDGAR"])
 app.include_router(edinet.router,    prefix="/api/edinet",    tags=["EDINET"])
+app.include_router(europe.router,    prefix="/api/europe",    tags=["Europe"])
 app.include_router(fca.router,       prefix="/api/fca",       tags=["FCA"])
 app.include_router(suggest.router,   prefix="/api/suggest",   tags=["Suggest"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["Watchlist"])

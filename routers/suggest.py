@@ -18,6 +18,8 @@ EXCHANGE_META = {
     "edinet": {"label": "JP",  "flag": "🇯🇵"},
     "sgx":    {"label": "SG",  "flag": "🇸🇬"},
     "asx":    {"label": "AU",  "flag": "🇦🇺"},
+    "europe": {"label": "EU",  "flag": "🇪🇺"},
+    "fca":    {"label": "UK",  "flag": "🇬🇧"},
 }
 
 _FTS_VEC = (

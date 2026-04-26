@@ -13,6 +13,7 @@ Sources:
 
 import asyncio
 import logging
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -60,7 +61,10 @@ async def _is_stale(pool: asyncpg.Pool) -> bool:
             "SELECT exchange, COUNT(*) AS n FROM companies GROUP BY exchange"
         )
         seeded = {r["exchange"] for r in by_exchange if r["n"] > 0}
-        if not {"edgar", "edinet", "sgx", "asx"}.issubset(seeded):
+        required = {"edgar", "edinet", "sgx", "asx"}
+        if os.environ.get("FINANCIALREPORTS_API_KEY"):
+            required.add("europe")
+        if not required.issubset(seeded):
             return True
         oldest = await conn.fetchval("SELECT MIN(updated_at) FROM companies")
     if not oldest:
@@ -200,6 +204,65 @@ async def _parse_asx_csv(pool: asyncpg.Pool, text: str) -> int:
     return len(rows)
 
 
+async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
+    api_key = os.environ.get("FINANCIALREPORTS_API_KEY", "")
+    if not api_key:
+        logger.warning("FINANCIALREPORTS_API_KEY not set — skipping Europe seed")
+        return 0
+
+    headers = {
+        "X-API-Key": api_key,
+        "Accept": "application/json",
+        "User-Agent": "GlobalFilings research@globalfilings.com",
+    }
+
+    rows  = []
+    page  = 1
+    limit = 5000  # max companies to seed
+
+    while len(rows) < limit:
+        try:
+            res = await client.get(
+                "https://api.financialreports.eu/companies/",
+                headers=headers,
+                params={"page": page, "page_size": 100, "view": "summary"},
+                timeout=30,
+            )
+            res.raise_for_status()
+            data = res.json()
+        except Exception as e:
+            logger.warning("Europe seed page %d failed: %s", page, e)
+            break
+
+        results = data.get("results") or []
+        if not results:
+            break
+
+        for c in results:
+            name    = (c.get("name") or "").strip()
+            company_id = str(c.get("id", ""))
+            if not name or not company_id:
+                continue
+            isins   = c.get("isins") or []
+            isin    = isins[0].get("isin") if isins and isinstance(isins[0], dict) else None
+            stocks  = c.get("listed_stock_exchanges") or []
+            ticker  = stocks[0].get("ticker_symbol") if stocks and isinstance(stocks[0], dict) else None
+            country = c.get("country_of_registration") or c.get("country") or "EU"
+            rows.append((
+                name, None, ticker or None,
+                "europe", country, c.get("sub_industry_code") or None,
+                company_id, "europe_id", ticker or None, _now(),
+            ))
+
+        if not data.get("next"):
+            break
+        page += 1
+        import asyncio; await asyncio.sleep(0.3)  # be polite to rate limits
+
+    await _bulk_insert(pool, rows)
+    return len(rows)
+
+
 # ── Main seed function ────────────────────────────────────────────────────────
 
 async def seed_all(pool: asyncpg.Pool, force: bool = False) -> dict:
@@ -220,6 +283,7 @@ async def seed_all(pool: asyncpg.Pool, force: bool = False) -> dict:
             ("edinet", seed_edinet(pool)),
             ("sgx",    seed_sgx(pool)),
             ("asx",    seed_asx(pool, client)),
+            ("europe", seed_europe(pool, client)),
         ]:
             try:
                 counts[label] = await coro
