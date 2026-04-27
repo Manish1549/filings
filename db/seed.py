@@ -220,17 +220,30 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
     page = 1
 
     while True:
-        try:
-            res = await client.get(
-                "https://api.financialreports.eu/companies/",
-                headers=headers,
-                params={"page": page, "page_size": 100, "view": "summary"},
-                timeout=30,
-            )
-            res.raise_for_status()
-            data = res.json()
-        except Exception as e:
-            logger.warning("Europe seed page %d failed: %s", page, e)
+        data = None
+        for attempt in range(3):
+            try:
+                res = await client.get(
+                    "https://api.financialreports.eu/companies/",
+                    headers=headers,
+                    params={"page": page, "page_size": 100, "view": "summary"},
+                    timeout=30,
+                )
+                if res.status_code == 429:
+                    wait = 60 * (attempt + 1)
+                    logger.warning("Europe seed page %d rate-limited, waiting %ds", page, wait)
+                    await asyncio.sleep(wait)
+                    continue
+                res.raise_for_status()
+                data = res.json()
+                break
+            except Exception as e:
+                if attempt == 2:
+                    logger.warning("Europe seed page %d failed after retries: %s", page, e)
+                else:
+                    await asyncio.sleep(5)
+
+        if data is None:
             break
 
         results = data.get("results") or []
@@ -238,7 +251,7 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
             break
 
         for c in results:
-            name    = (c.get("name") or "").strip()
+            name       = (c.get("name") or "").strip()
             company_id = str(c.get("id", ""))
             if not name or not company_id:
                 continue
@@ -253,10 +266,13 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
                 company_id, "europe_id", ticker or None, _now(),
             ))
 
+        if len(rows) % 5000 == 0 and rows:
+            logger.info("Europe seed progress: %d companies (page %d)", len(rows), page)
+
         if not data.get("next"):
             break
         page += 1
-        import asyncio; await asyncio.sleep(0.3)  # be polite to rate limits
+        await asyncio.sleep(1.0)
 
     await _bulk_insert(pool, rows)
     return len(rows)
