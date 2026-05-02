@@ -37,11 +37,13 @@ CREATE TABLE IF NOT EXISTS watchlist (
 CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_sub);
 
 CREATE TABLE IF NOT EXISTS users (
-    sub        TEXT PRIMARY KEY,
-    email      TEXT NOT NULL,
-    name       TEXT,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    sub                TEXT PRIMARY KEY,
+    email              TEXT NOT NULL,
+    name               TEXT,
+    anthropic_api_key  TEXT,
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS anthropic_api_key TEXT;
 """
 
 

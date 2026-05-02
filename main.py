@@ -23,7 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from routers import sgx, asx, edgar, edinet, fca, europe
-from routers import suggest, auth, watchlist
+from routers import suggest, auth, watchlist, user
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +84,7 @@ app.include_router(europe.router,    prefix="/api/europe",    tags=["Europe"])
 app.include_router(fca.router,       prefix="/api/fca",       tags=["FCA"])
 app.include_router(suggest.router,   prefix="/api/suggest",   tags=["Suggest"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["Watchlist"])
+app.include_router(user.router,      prefix="/api/user",      tags=["User"])
 
 
 async def _user(request: Request) -> dict | None:

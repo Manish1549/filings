@@ -128,6 +128,23 @@
   .wl-remove:hover{color:#f87171}
   .wl-divider{height:1px;background:rgba(255,255,255,0.05);margin:4px 0}
 
+  /* Claude API key settings section */
+  .wl-settings{padding:14px 16px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0}
+  .wl-settings-title{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .wl-settings-desc{font-size:11px;color:#4b5563;line-height:1.5;margin-bottom:10px}
+  .wl-key-row{display:flex;gap:6px;align-items:center}
+  .wl-key-input{flex:1;background:#0a0a0a;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:7px 10px;font-size:12px;color:#d1d5db;font-family:'SF Mono','Fira Mono',monospace;outline:none;transition:border-color 0.15s;min-width:0}
+  .wl-key-input::placeholder{color:#374151;font-family:'Inter',sans-serif}
+  .wl-key-input:focus{border-color:rgba(255,255,255,0.25)}
+  .wl-key-save{padding:7px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.07);color:#d1d5db;transition:all 0.15s;white-space:nowrap;font-family:'Inter',sans-serif}
+  .wl-key-save:hover{background:rgba(255,255,255,0.12);color:#fff}
+  .wl-key-status{margin-top:7px;font-size:11px;display:flex;align-items:center;gap:5px;min-height:16px}
+  .wl-key-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+  .wl-key-dot.active{background:#22c55e}
+  .wl-key-dot.inactive{background:#374151}
+  .wl-key-clear{font-size:11px;color:#4b5563;background:none;border:none;cursor:pointer;padding:0;margin-left:auto;transition:color 0.15s;font-family:'Inter',sans-serif}
+  .wl-key-clear:hover{color:#f87171}
+
   /* Bookmark button on suggestion items */
   .sug-wl-btn{background:none;border:none;color:#374151;cursor:pointer;padding:4px 6px;border-radius:6px;font-size:15px;line-height:1;transition:all 0.15s;flex-shrink:0}
   .sug-wl-btn:hover{color:#fbbf24;background:rgba(251,191,36,0.1)}
@@ -246,6 +263,16 @@
   <div class="wl-alert-note">
     🔔 Email alerts are on for all watchlist companies.<br>
     New filings will be sent to <strong>{{ user.email }}</strong>
+  </div>
+  <div class="wl-settings">
+    <div class="wl-settings-title">✦ AI Summaries</div>
+    <div class="wl-settings-desc">Add your Claude API key to receive AI-generated summaries in filing alerts. Without a key you'll still get standard alerts.</div>
+    <div class="wl-key-row">
+      <input class="wl-key-input" id="claude-key-input" type="password"
+             placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false"/>
+      <button class="wl-key-save" onclick="saveClaudeKey()">Save</button>
+    </div>
+    <div class="wl-key-status" id="claude-key-status"></div>
   </div>
 </div>
 
@@ -428,6 +455,7 @@ function updateWlBadge() {
 
 function openWatchlist() {
   loadWatchlist();
+  loadClaudeKeyStatus();
   document.getElementById('wl-overlay').classList.add('open');
   document.getElementById('wl-panel').classList.add('open');
 }
@@ -559,6 +587,59 @@ async function loadStats() {
 }
 loadStats();
 loadWatchlist();
+
+// ── Claude API key settings ───────────────────────────────────────────────────
+async function loadClaudeKeyStatus() {
+  try {
+    const data = await fetch('/api/user/settings').then(r => r.json());
+    _renderKeyStatus(data.has_claude_key);
+  } catch(e) {}
+}
+
+function _renderKeyStatus(hasKey) {
+  const el = document.getElementById('claude-key-status');
+  if (!el) return;
+  if (hasKey) {
+    el.innerHTML = `<span class="wl-key-dot active"></span><span style="color:#6b7280">API key saved — summaries enabled</span><button class="wl-key-clear" onclick="clearClaudeKey()">Remove</button>`;
+  } else {
+    el.innerHTML = `<span class="wl-key-dot inactive"></span><span style="color:#374151">No key saved — standard alerts only</span>`;
+  }
+}
+
+async function saveClaudeKey() {
+  const input = document.getElementById('claude-key-input');
+  const key = (input.value || '').trim();
+  if (!key) return;
+  const el = document.getElementById('claude-key-status');
+  el.innerHTML = `<span style="color:#4b5563">Saving…</span>`;
+  try {
+    const res = await fetch('/api/user/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({anthropic_api_key: key}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      input.value = '';
+      _renderKeyStatus(true);
+    } else {
+      el.innerHTML = `<span style="color:#f87171">${data.error || 'Save failed'}</span>`;
+    }
+  } catch(e) {
+    el.innerHTML = `<span style="color:#f87171">Error saving key</span>`;
+  }
+}
+
+async function clearClaudeKey() {
+  try {
+    await fetch('/api/user/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({anthropic_api_key: ''}),
+    });
+    _renderKeyStatus(false);
+  } catch(e) {}
+}
 </script>
 </body>
 </html>

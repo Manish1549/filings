@@ -88,27 +88,59 @@ async def _get_watched(pool, exchange: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def _get_users(pool, exchange: str, lookup_key: str) -> list[str]:
-    """Return emails of all users watching a company."""
+async def _get_users(pool, exchange: str, lookup_key: str) -> list[dict]:
+    """Return {email, anthropic_api_key} for all users watching a company."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT u.email FROM watchlist w
+            """SELECT u.email, u.anthropic_api_key FROM watchlist w
                JOIN users u ON u.sub = w.user_sub
                WHERE w.exchange = $1 AND w.lookup_key = $2""",
             exchange, lookup_key,
         )
-    return [r["email"] for r in rows if r["email"]]
+    return [{"email": r["email"], "api_key": r["anthropic_api_key"] or ""}
+            for r in rows if r["email"]]
 
 
 async def _notify(pool, exchange: str, lookup_key: str,
                   company_name: str, ticker: str | None, new_filings: list[dict]) -> bool:
-    """Send email to all watchers. Returns True if all succeeded."""
+    """Email all watchers. Users with a Claude API key get AI-summarized filings."""
     users = await _get_users(pool, exchange, lookup_key)
     if not users:
         return True
+
+    from alerts.summarizer import summarize_filing
+
+    # Cache summaries keyed by (url, api_key) to avoid duplicate Claude calls
+    # when multiple users share the same key and watch the same company.
+    _summary_cache: dict[tuple, str] = {}
+
+    async def _get_summary(url: str, title: str, api_key: str) -> str:
+        if not url or not api_key:
+            return ""
+        cache_key = (url, api_key)
+        if cache_key in _summary_cache:
+            return _summary_cache[cache_key]
+        try:
+            result = await summarize_filing(url, title, api_key)
+        except Exception:
+            result = None
+        _summary_cache[cache_key] = result or ""
+        return _summary_cache[cache_key]
+
     all_ok = True
-    for email in users:
-        sent = await send_filing_alert(email, company_name, ticker, new_filings, exchange)
+    for user in users:
+        email   = user["email"]
+        api_key = user["api_key"]
+
+        if api_key:
+            enriched = []
+            for f in new_filings:
+                summary = await _get_summary(f.get("url", ""), f.get("title", ""), api_key)
+                enriched.append({**f, "summary": summary})
+        else:
+            enriched = new_filings  # plain alert, no summary
+
+        sent = await send_filing_alert(email, company_name, ticker, enriched, exchange)
         if not sent:
             all_ok = False
             logger.error("Email failed: %s → %s (%s)", exchange, email, company_name)

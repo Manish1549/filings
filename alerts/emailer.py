@@ -29,16 +29,20 @@ def _html_body(company_name: str, ticker: str | None, filings: list[dict], excha
     ticker_str     = f" ({ticker})" if ticker else ""
     exchange_label = EXCHANGE_LABELS.get(exchange.lower(), exchange.upper())
 
+    from alerts.summarizer import format_summary_html
+
     rows = ""
     for f in filings:
-        url   = f.get("url", "")
-        title = f.get("title", "Untitled")
-        cat   = f.get("category_name") or f.get("cat", "")
-        date  = f.get("broadcast_date_time") or f.get("submission_date", "")
-        link_html = f"<a href='{url}' style='color:#60a5fa;text-decoration:none'>View →</a>" if url else "—"
+        url     = f.get("url", "")
+        title   = f.get("title", "Untitled")
+        cat     = f.get("category_name") or f.get("cat", "")
+        date    = f.get("broadcast_date_time") or f.get("submission_date", "")
+        summary = f.get("summary", "")
+        link_html    = f"<a href='{url}' style='color:#60a5fa;text-decoration:none'>View →</a>" if url else "—"
+        summary_html = format_summary_html(summary) if summary else ""
         rows += f"""
         <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #222;font-size:14px;color:#e5e7eb">{title}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #222;font-size:14px;color:#e5e7eb">{title}{summary_html}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #222;font-size:12px;color:#9ca3af;white-space:nowrap">{cat}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #222;font-size:12px;color:#9ca3af;white-space:nowrap">{date}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #222;font-size:12px">{link_html}</td>
