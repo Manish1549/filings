@@ -184,7 +184,7 @@ async def _poll_sgx(pool, r: aioredis.Redis, companies: list[dict]) -> None:
                     "title":              f.title,
                     "category_name":      f.category_name or f.cat or "",
                     "submission_date":    f.broadcast_date_time or f.submission_date,
-                    "url":                f"{SGX_LINKS}/{f.url}" if f.url else "",
+                    "url":                f.url if (f.url or "").startswith("http") else (f"{SGX_LINKS}/{f.url}" if f.url else ""),
                     "_ts":                int(bdt),
                 })
                 newest_ms = max(newest_ms, int(bdt))

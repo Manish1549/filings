@@ -35,8 +35,6 @@ def _html_body(company_name: str, ticker: str | None, filings: list[dict], excha
         title = f.get("title", "Untitled")
         cat   = f.get("category_name") or f.get("cat", "")
         date  = f.get("broadcast_date_time") or f.get("submission_date", "")
-        if url and not url.startswith("http"):
-            url = f"https://links.sgx.com/1.0.0/corporate-announcements/{url}"
         link_html = f"<a href='{url}' style='color:#60a5fa;text-decoration:none'>View →</a>" if url else "—"
         rows += f"""
         <tr>
