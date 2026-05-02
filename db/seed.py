@@ -9,6 +9,7 @@ Sources:
   EDINET — edinet-tools bundled CSV      (~30 K JP companies)
   SGX    — SGX /companylist + /securitylist (~700 SG companies)
   ASX    — ASX company directory CSV     (~2 K AU companies)
+  Europe — financialreports.eu API       (~46 K companies)
 """
 
 import asyncio
@@ -56,15 +57,20 @@ async def _is_stale(pool: asyncpg.Pool) -> bool:
         count = await conn.fetchval("SELECT COUNT(*) FROM companies")
         if count == 0:
             return True
-        # If any expected exchange has 0 companies, seed is incomplete
         by_exchange = await conn.fetch(
             "SELECT exchange, COUNT(*) AS n FROM companies GROUP BY exchange"
         )
-        seeded = {r["exchange"] for r in by_exchange if r["n"] > 0}
+        counts_map = {r["exchange"]: r["n"] for r in by_exchange}
         required = {"edgar", "edinet", "sgx", "asx"}
         if os.environ.get("FINANCIALREPORTS_API_KEY"):
             required.add("europe")
-        if not required.issubset(seeded):
+        for exch in required:
+            if counts_map.get(exch, 0) == 0:
+                return True
+        # Europe partial seed (rate-limited mid-run) → reseed
+        if "europe" in required and counts_map.get("europe", 0) < 40000:
+            logger.info("Europe has %d companies (< 40K) — marking stale for reseed",
+                        counts_map.get("europe", 0))
             return True
         oldest = await conn.fetchval("SELECT MIN(updated_at) FROM companies")
     if not oldest:
@@ -204,7 +210,8 @@ async def _parse_asx_csv(pool: asyncpg.Pool, text: str) -> int:
     return len(rows)
 
 
-async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
+async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient,
+                      start_page: int = 1) -> int:
     api_key = os.environ.get("FINANCIALREPORTS_API_KEY", "")
     if not api_key:
         logger.warning("FINANCIALREPORTS_API_KEY not set — skipping Europe seed")
@@ -216,12 +223,22 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
         "User-Agent": "GlobalFilings research@globalfilings.com",
     }
 
-    rows = []
-    page = 1
+    # How many are already in DB (from a previous partial run)
+    existing = await pool.fetchval(
+        "SELECT COUNT(*) FROM companies WHERE exchange = 'europe'"
+    )
+    total      = int(existing or 0)
+    batch: list = []
+    page       = start_page
+    BATCH_SIZE = 1000
+    PAGE_DELAY = 13.0  # ~4.6 req/min — safely under trial key rate limit (~5/min)
+
+    if total > 0:
+        logger.info("Europe seed resuming from page %d (%d companies already in DB)", page, total)
 
     while True:
         data = None
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 res = await client.get(
                     "https://api.financialreports.eu/companies/",
@@ -230,7 +247,7 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
                     timeout=30,
                 )
                 if res.status_code == 429:
-                    wait = 60 * (attempt + 1)
+                    wait = 90 * (attempt + 1)
                     logger.warning("Europe seed page %d rate-limited, waiting %ds", page, wait)
                     await asyncio.sleep(wait)
                     continue
@@ -238,10 +255,10 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
                 data = res.json()
                 break
             except Exception as e:
-                if attempt == 2:
+                if attempt == 4:
                     logger.warning("Europe seed page %d failed after retries: %s", page, e)
                 else:
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(10)
 
         if data is None:
             break
@@ -260,22 +277,30 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient) -> int:
             stocks  = c.get("listed_stock_exchanges") or []
             ticker  = stocks[0].get("ticker_symbol") if stocks and isinstance(stocks[0], dict) else None
             country = c.get("country_of_registration") or c.get("country") or "EU"
-            rows.append((
+            batch.append((
                 name, None, ticker or None,
                 "europe", country, c.get("sub_industry_code") or None,
                 company_id, "europe_id", ticker or None, _now(),
             ))
 
-        if len(rows) % 5000 == 0 and rows:
-            logger.info("Europe seed progress: %d companies (page %d)", len(rows), page)
+        # Flush to DB every BATCH_SIZE rows — preserves progress if app restarts
+        if len(batch) >= BATCH_SIZE:
+            await _bulk_insert(pool, batch)
+            total += len(batch)
+            batch = []
+            logger.info("Europe seed: %d companies saved (page %d)", total, page)
 
         if not data.get("next"):
             break
         page += 1
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(PAGE_DELAY)
 
-    await _bulk_insert(pool, rows)
-    return len(rows)
+    if batch:
+        await _bulk_insert(pool, batch)
+        total += len(batch)
+
+    logger.info("Europe seed complete: %d total companies", total)
+    return total
 
 
 # ── Main seed function ────────────────────────────────────────────────────────
@@ -288,20 +313,30 @@ async def seed_all(pool: asyncpg.Pool, force: bool = False) -> dict:
 
     logger.info("Seeding company database%s…", " (forced)" if force else "")
 
-    async with pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE companies RESTART IDENTITY")
+    # Calculate Europe resume page before wiping anything
+    europe_existing = int(await pool.fetchval(
+        "SELECT COUNT(*) FROM companies WHERE exchange = 'europe'"
+    ) or 0)
+    europe_start_page = max(1, (europe_existing // 100) + 1) if europe_existing > 0 else 1
+    if europe_existing > 0:
+        logger.info("Europe: resuming from page %d (%d companies already seeded)",
+                    europe_start_page, europe_existing)
 
     counts: dict[str, int] = {}
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        for label, coro in [
-            ("edgar",  seed_edgar(pool, client)),
-            ("edinet", seed_edinet(pool)),
-            ("sgx",    seed_sgx(pool)),
-            ("asx",    seed_asx(pool, client)),
-            ("europe", seed_europe(pool, client)),
+        for label, seeder in [
+            ("edgar",  lambda: seed_edgar(pool, client)),
+            ("edinet", lambda: seed_edinet(pool)),
+            ("sgx",    lambda: seed_sgx(pool)),
+            ("asx",    lambda: seed_asx(pool, client)),
+            # Europe: skip delete if resuming a partial run
+            ("europe", lambda: seed_europe(pool, client, start_page=europe_start_page)),
         ]:
             try:
-                counts[label] = await coro
+                if label != "europe" or europe_existing == 0:
+                    async with pool.acquire() as conn:
+                        await conn.execute("DELETE FROM companies WHERE exchange = $1", label)
+                counts[label] = await seeder()
                 logger.info("%-8s %d companies", label.upper(), counts[label])
             except Exception as e:
                 logger.warning("%-8s seed failed: %s", label.upper(), e)
