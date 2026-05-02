@@ -62,7 +62,7 @@ async def _is_stale(pool: asyncpg.Pool) -> bool:
         )
         counts_map = {r["exchange"]: r["n"] for r in by_exchange}
         required = {"edgar", "edinet", "sgx", "asx"}
-        if os.environ.get("FINANCIALREPORTS_API_KEY"):
+        if any(os.environ.get(f"FINANCIALREPORTS_API_KEY{s}") for s in ("", "_2", "_3")):
             required.add("europe")
         for exch in required:
             if counts_map.get(exch, 0) == 0:
@@ -212,18 +212,13 @@ async def _parse_asx_csv(pool: asyncpg.Pool, text: str) -> int:
 
 async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient,
                       start_page: int = 1) -> int:
-    api_key = os.environ.get("FINANCIALREPORTS_API_KEY", "")
-    if not api_key:
+    # Collect all available API keys (primary + up to 2 extras)
+    keys = [k for s in ("", "_2", "_3")
+            if (k := os.environ.get(f"FINANCIALREPORTS_API_KEY{s}", "").strip())]
+    if not keys:
         logger.warning("FINANCIALREPORTS_API_KEY not set — skipping Europe seed")
         return 0
 
-    headers = {
-        "X-API-Key": api_key,
-        "Accept": "application/json",
-        "User-Agent": "GlobalFilings research@globalfilings.com",
-    }
-
-    # How many are already in DB (from a previous partial run)
     existing = await pool.fetchval(
         "SELECT COUNT(*) FROM companies WHERE exchange = 'europe'"
     )
@@ -232,23 +227,44 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient,
     page       = start_page
     BATCH_SIZE = 1000
     PAGE_DELAY = 13.0  # ~4.6 req/min — safely under trial key rate limit (~5/min)
+    key_idx    = 0     # index into keys[]
 
     if total > 0:
         logger.info("Europe seed resuming from page %d (%d companies already in DB)", page, total)
+    logger.info("Europe seed using %d API key(s)", len(keys))
+
+    def _hdrs():
+        return {
+            "X-API-Key":  keys[key_idx],
+            "Accept":     "application/json",
+            "User-Agent": "GlobalFilings research@globalfilings.com",
+        }
 
     while True:
-        data = None
+        data          = None
+        consec_429    = 0
+
         for attempt in range(5):
             try:
                 res = await client.get(
                     "https://api.financialreports.eu/companies/",
-                    headers=headers,
+                    headers=_hdrs(),
                     params={"page": page, "page_size": 100, "view": "summary"},
                     timeout=30,
                 )
                 if res.status_code == 429:
+                    consec_429 += 1
+                    # After 2 consecutive 429s try rotating to the next key
+                    if consec_429 >= 2 and key_idx + 1 < len(keys):
+                        key_idx += 1
+                        consec_429 = 0
+                        logger.info("Europe seed: rotating to key %d/%d (page %d)",
+                                    key_idx + 1, len(keys), page)
+                        await asyncio.sleep(3)
+                        continue
                     wait = 90 * (attempt + 1)
-                    logger.warning("Europe seed page %d rate-limited, waiting %ds", page, wait)
+                    logger.warning("Europe seed page %d rate-limited (key %d/%d), waiting %ds",
+                                   page, key_idx + 1, len(keys), wait)
                     await asyncio.sleep(wait)
                     continue
                 res.raise_for_status()
@@ -261,6 +277,13 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient,
                     await asyncio.sleep(10)
 
         if data is None:
+            # All attempts failed — try next key if available
+            if key_idx + 1 < len(keys):
+                key_idx += 1
+                logger.info("Europe seed: rotating to key %d/%d after failures (page %d)",
+                            key_idx + 1, len(keys), page)
+                continue
+            logger.warning("Europe seed: all keys exhausted at page %d — stopping", page)
             break
 
         results = data.get("results") or []
@@ -288,7 +311,8 @@ async def seed_europe(pool: asyncpg.Pool, client: httpx.AsyncClient,
             await _bulk_insert(pool, batch)
             total += len(batch)
             batch = []
-            logger.info("Europe seed: %d companies saved (page %d)", total, page)
+            logger.info("Europe seed: %d companies saved (page %d, key %d/%d)",
+                        total, page, key_idx + 1, len(keys))
 
         if not data.get("next"):
             break
