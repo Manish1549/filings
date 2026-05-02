@@ -106,12 +106,9 @@ async def _notify(pool, exchange: str, lookup_key: str,
     users = await _get_users(pool, exchange, lookup_key)
     if not users:
         return True
-    loop = asyncio.get_event_loop()
     all_ok = True
     for email in users:
-        sent = await loop.run_in_executor(
-            None, send_filing_alert, email, company_name, ticker, new_filings,
-        )
+        sent = await send_filing_alert(email, company_name, ticker, new_filings, exchange)
         if not sent:
             all_ok = False
             logger.error("Email failed: %s → %s (%s)", exchange, email, company_name)
