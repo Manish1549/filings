@@ -73,8 +73,12 @@ CMS_VERSION    = "70f75ec90c030bab34d750ee55d74b016f70d4b6"
 # Full SGX history starts here (confirmed from DevTools)
 SGX_EARLIEST = "20060410_160000"
 
-APPCONFIG_RE   = re.compile(r'appconfig\.js\?v=([\w]+)')
-CMS_VERSION_RE = re.compile(r'"CMS_VERSION"\s*:\s*"([a-f0-9]+)"')
+CMS_VERSION_RE  = re.compile(r'"CMS_VERSION"\s*:\s*"([a-f0-9]+)"')
+_APPCONFIG_RES  = [
+    re.compile(r'appconfig\.js\?v=([\w]+)'),           # ?v=HASH (original)
+    re.compile(r'appconfig[.-]([a-f0-9]{8,40})\.js'),  # appconfig.HASH.js (webpack)
+    re.compile(r'/config/[^"\']*\?v=([\w]+)'),         # any /config/ file with ?v=
+]
 
 BASE_HEADERS = {
     "Accept": "*/*",
@@ -84,8 +88,11 @@ BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/146.0.0.0 Safari/537.36"
+        "Chrome/147.0.0.0 Safari/537.36"
     ),
+    "Sec-Ch-Ua": '"Google Chrome";v="147", "Not/A)Brand";v="8", "Chromium";v="147"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-site",
@@ -203,22 +210,37 @@ class SGXClient:
         logger.info("Discovering CMS version dynamically from SGX frontend...")
         res = await client.get(SGX_HOME, headers=BASE_HEADERS)
         res.raise_for_status()
+        html = res.text
 
-        match = APPCONFIG_RE.search(res.text)
-        if not match:
-            raise RuntimeError("Could not find appconfig.js URL in SGX homepage")
+        # CMS_VERSION sometimes appears inline in the HTML itself
+        m = CMS_VERSION_RE.search(html)
+        if m:
+            version = m.group(1)
+            logger.info("Found inline CMS_VERSION: %s...", version[:8])
+            return version
 
-        config_url = f"{SGX_HOME}/config/appconfig.js?v={match.group(1)}"
-        logger.info("Found appconfig URL: %s", config_url)
+        # Try multiple patterns to find the appconfig script URL
+        config_url = None
+        for pat in _APPCONFIG_RES:
+            m = pat.search(html)
+            if m:
+                config_url = f"{SGX_HOME}/config/appconfig.js?v={m.group(1)}"
+                logger.info("Found appconfig URL: %s", config_url)
+                break
+
+        # Fallback: try fetching appconfig.js directly without version query
+        if not config_url:
+            config_url = f"{SGX_HOME}/config/appconfig.js"
+            logger.info("appconfig pattern not found — trying direct URL: %s", config_url)
 
         res = await client.get(config_url, headers=BASE_HEADERS)
         res.raise_for_status()
 
-        match = CMS_VERSION_RE.search(res.text)
-        if not match:
+        m = CMS_VERSION_RE.search(res.text)
+        if not m:
             raise RuntimeError("Could not find CMS_VERSION in appconfig.js")
 
-        version = match.group(1)
+        version = m.group(1)
         logger.info("Discovered CMS_VERSION: %s...", version[:8])
         return version
 
