@@ -51,16 +51,6 @@ EDINET_HEADERS = {
     "Accept": "application/json",
 }
 
-FCA_SEARCH_URL = "https://api.data.fca.org.uk/search?index=fca-nsm-searchdata"
-FCA_ARTEFACTS  = "https://data.fca.org.uk/artefacts/"
-FCA_HEADERS    = {
-    "accept": "application/json",
-    "content-type": "application/json",
-    "origin": "https://data.fca.org.uk",
-    "referer": "https://data.fca.org.uk/",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-}
-
 
 # ── Redis ──────────────────────────────────────────────────────────────────────
 
@@ -191,14 +181,24 @@ async def _poll_sgx(pool, r: aioredis.Redis, companies: list[dict]) -> None:
             f"&pagestart=0&pagesize=10"
         )
         try:
-            headers = {"authorizationtoken": token, "Accept": "*/*",
-                       "Origin": "https://www.sgx.com", "Referer": "https://www.sgx.com/",
-                       "User-Agent": "Mozilla/5.0"}
             async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-                res = await client.get(url, headers=headers)
-                if res.status_code == 401:
+                res = await client.get(url, headers={
+                    "authorizationtoken": token, "Accept": "*/*",
+                    "Origin": "https://www.sgx.com", "Referer": "https://www.sgx.com/",
+                    "User-Agent": "Mozilla/5.0",
+                })
+                if res.status_code in (401, 403):
+                    # Token expired — refresh once and retry
                     _sgx.invalidate_token()
-                    continue
+                    try:
+                        token = await _sgx._get_token(client)
+                        res   = await client.get(url, headers={
+                            "authorizationtoken": token, "Accept": "*/*",
+                            "Origin": "https://www.sgx.com", "Referer": "https://www.sgx.com/",
+                            "User-Agent": "Mozilla/5.0",
+                        })
+                    except Exception:
+                        continue
                 if res.status_code >= 400:
                     continue
                 data = res.json()

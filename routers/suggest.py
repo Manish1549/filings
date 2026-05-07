@@ -19,7 +19,6 @@ EXCHANGE_META = {
     "sgx":    {"label": "SG",  "flag": "🇸🇬"},
     "asx":    {"label": "AU",  "flag": "🇦🇺"},
     "europe": {"label": "EU",  "flag": "🇪🇺"},
-    "fca":    {"label": "UK",  "flag": "🇬🇧"},
 }
 
 _FTS_VEC = (

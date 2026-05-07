@@ -20,7 +20,6 @@ EXCHANGE_LABELS = {
     "asx":    "Australian Securities Exchange",
     "edgar":  "US SEC (EDGAR)",
     "edinet": "Japan TSE (EDINET)",
-    "fca":    "UK FCA",
     "europe": "European Markets",
 }
 
