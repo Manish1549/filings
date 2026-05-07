@@ -298,7 +298,6 @@ const EXCH_COLORS = {
   edinet: { bg:'rgba(236,72,153,0.18)',  text:'#f472b6' },
   sgx:    { bg:'rgba(239,68,68,0.18)',   text:'#f87171' },
   asx:    { bg:'rgba(234,179,8,0.18)',   text:'#fbbf24' },
-  fca:    { bg:'rgba(139,92,246,0.18)',  text:'#a78bfa' },
   europe: { bg:'rgba(37,99,235,0.18)',   text:'#93c5fd' },
 };
 
@@ -329,7 +328,6 @@ const ASX_ANN_TYPES = [
 let sgxCategoryGroups = [];
 let edgarFormTypes    = [];
 let edinetDocTypes    = [];
-let fcaCategories     = [];
 
 // ── Time range ─────────────────────────────────────────────────────────────────
 let activeTimeRange = '1y';
@@ -472,38 +470,6 @@ async function buildFilters() {
       </div>
       <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
 
-  } else if (EXCHANGE === 'fca') {
-    try {
-      const data = await fetch('/api/fca/categories').then(r => r.json());
-      fcaCategories = data.categories || data || [];
-    } catch(e) {}
-
-    const catOpts = fcaCategories.map(c =>
-      `<option value="${c.code||c}">${c.label || c.code || c}</option>`
-    ).join('');
-
-    const today = new Date().toISOString().split('T')[0];
-    const oneY  = new Date(); oneY.setFullYear(oneY.getFullYear()-1);
-    const oneYS = oneY.toISOString().split('T')[0];
-
-    row.innerHTML = `
-      <div class="field-group" style="min-width:190px">
-        <label>Filing type</label>
-        <select id="fca-cat" onchange="currentPage=0;doSearch()">
-          <option value="">All types</option>
-          ${catOpts}
-        </select>
-      </div>
-      <div class="field-group">
-        <label>From date</label>
-        <input type="date" id="fca-from" value="${oneYS}">
-      </div>
-      <div class="field-group">
-        <label>To date</label>
-        <input type="date" id="fca-to" value="${today}">
-      </div>
-      <button class="btn" onclick="currentPage=0;doSearch()" type="button">Search</button>`;
-
   } else if (EXCHANGE === 'europe') {
     const today = new Date().toISOString().split('T')[0];
     const oneY  = new Date(); oneY.setFullYear(oneY.getFullYear()-1);
@@ -612,16 +578,6 @@ function buildUrl(page) {
     return `/api/edinet/filings?${p}`;
   }
 
-  if (EXCHANGE === 'fca') {
-    p.set('company', COMPANY_NAME);
-    const cat  = document.getElementById('fca-cat')?.value;
-    const from = document.getElementById('fca-from')?.value;
-    const to   = document.getElementById('fca-to')?.value;
-    if (cat)  p.set('category', cat);
-    if (from) p.set('from_date', from);
-    if (to)   p.set('to_date', to);
-    return `/api/fca/filings?${p}`;
-  }
 
   if (EXCHANGE === 'europe') {
     if (LOOKUP_KEY) p.set('company', LOOKUP_KEY);
@@ -720,22 +676,6 @@ const TABLE_CONFIG = {
     },
     csvHeader: 'Submitted,Sec code,EDINET code,Doc type,Description,Period,XBRL,PDF,URL',
   },
-  fca: {
-    columns: ['Submitted','Headline','Category','Source','Actions'],
-    renderRow(f) {
-      const src  = f.source ? `<span class="badge badge-uk">${f.source}</span>` : '—';
-      const view = f.document_url ? `<button class="action-btn" onclick="window.open('${f.document_url}','_blank')">View ↗</button>` : '—';
-      return `<td class="td-date">${f.submitted_date||''}</td>
-        <td class="td-title" title="${esc2(f.headline||'')}">${f.headline||'—'}</td>
-        <td><span class="badge badge-type">${f.category||f.type_code||'—'}</span></td>
-        <td>${src}</td>
-        <td>${view}</td>`;
-    },
-    csvRow(f) {
-      return [f.submitted_date||'', esc(f.headline), f.type_code||'', f.source||'', f.document_url||''].join(',');
-    },
-    csvHeader: 'Submitted,Headline,Category,Source,URL',
-  },
   europe: {
     columns: ['Released','Company','Title','Type','Period','Lang','Actions'],
     renderRow(f) {
@@ -831,7 +771,6 @@ async function doSearch(page) {
     if (EXCHANGE === 'asx')    { filings = data.filings||data.items||data||[]; totalFilings = data.total_items||data.total||0; }
     if (EXCHANGE === 'edgar')  { filings = data.filings||data||[];              totalFilings = data.total||filings.length; }
     if (EXCHANGE === 'edinet') { filings = data.filings||data.documents||data||[]; totalFilings = data.total||filings.length; }
-    if (EXCHANGE === 'fca')    { filings = data.filings||data.items||data||[]; totalFilings = data.total||filings.length; }
     if (EXCHANGE === 'europe') { filings = data.filings||data.results||data||[]; totalFilings = data.total||data.count||filings.length; }
 
     // EDINET: filter by company name client-side

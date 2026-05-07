@@ -170,9 +170,6 @@
     <div class="nav-item" id="nav-edinet" onclick="switchMarket('edinet')">
       <span class="nav-flag">🇯🇵</span> EDINET · Japan
     </div>
-    <div class="nav-item" id="nav-fca" onclick="switchMarket('fca')">
-      <span class="nav-flag">🇬🇧</span> FCA NSM · UK
-    </div>
   </div>
 
   <div class="nav-divider"></div>
@@ -453,8 +450,8 @@ let edinetCompany = null;   // EDINET: { code, name }
 
 // ── Unified suggest ───────────────────────────────────────────────────────────
 let suggestTimer = null;
-const EXCH_FLAG  = { edgar:'🇺🇸', edinet:'🇯🇵', sgx:'🇸🇬', asx:'🇦🇺', fca:'🇬🇧' };
-const EXCH_COLOR = { edgar:'#1d4ed8', edinet:'#dc2626', sgx:'#b45309', asx:'#15803d', fca:'#7c3aed' };
+const EXCH_FLAG  = { edgar:'🇺🇸', edinet:'🇯🇵', sgx:'🇸🇬', asx:'🇦🇺' };
+const EXCH_COLOR = { edgar:'#1d4ed8', edinet:'#dc2626', sgx:'#b45309', asx:'#15803d' };
 
 function onSearchInput(val) {
   clearTimeout(suggestTimer);
@@ -809,60 +806,6 @@ const MARKETS = {
     ],
   },
 
-  fca: {
-    title: 'FCA NSM — UK National Storage Mechanism',
-    sub: 'Regulated disclosures · api.data.fca.org.uk',
-    searchLabel: 'Company name',
-    searchPlaceholder: 'e.g. BARCLAYS, CARNIVAL PLC, HSBC',
-    categoryLabel: 'Filing type',
-    categoriesUrl: '/api/fca/categories',
-    categoryValueKey: 'code',
-    showDates: true,
-    columns: ['Submitted','Company','LEI','Headline','Category','Source','Actions'],
-    searchUrl(q, cat, from, to, page) {
-      const p = new URLSearchParams({ page, page_size: PAGE_SIZE });
-      if (q)    p.set('company', q);
-      if (cat)  p.set('category', cat);
-      if (from) p.set('from_date', from);
-      if (to)   p.set('to_date', to);
-      return '/api/fca/filings?' + p;
-    },
-    renderRow(f) {
-      const src = f.source ? '<span class="badge badge-uk">' + f.source + '</span>' : '—';
-      const docBtn = f.document_url
-        ? '<button class="action-btn" onclick="window.open(\'' + f.document_url + '\',\'_blank\')">View ↗</button>'
-        : '—';
-      return '<td class="td-date">' + (f.submitted_date||'') + '</td>' +
-        '<td class="td-company" title="' + (f.company||'') + '">' + (f.company||'—') + '</td>' +
-        '<td style="font-size:11px;color:#9ca3af;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (f.lei||'—') + '</td>' +
-        '<td class="td-title" title="' + (f.headline||'') + '">' + (f.headline||'—') + '</td>' +
-        '<td><span class="badge badge-type">' + (f.category||f.type_code||'—') + '</span></td>' +
-        '<td>' + src + '</td>' +
-        '<td>' + docBtn + '</td>';
-    },
-    statsKey(filings) {
-      return {
-        total: filings.length,
-        companies: new Set(filings.map(f=>f.company).filter(Boolean)).size,
-        categories: new Set(filings.map(f=>f.type_code).filter(Boolean)).size,
-        extra: filings.filter(f=>f.source==='RNS').length,
-        extraLabel: 'RNS filings',
-        compLabel: 'Companies',
-      };
-    },
-    csvRow(f) {
-      return [f.submitted_date||'', esc(f.company), f.lei||'', esc(f.headline), f.type_code||'', f.source||'', f.document_url||''].join(',');
-    },
-    apiEndpoints: [
-      {url:'/api/fca/filings?company=BARCLAYS',                        desc:'Filings by company'},
-      {url:'/api/fca/filings?company=HSBC&type_code=AFS',              desc:'Annual reports for HSBC'},
-      {url:'/api/fca/filings?from_date=2026-03-01&to_date=2026-03-30', desc:'All filings in March'},
-      {url:'/api/fca/filings?lei=4DR1VPDQMHD3N3QW8W95',               desc:'Search by LEI'},
-      {url:'/api/fca/search?q=quarterly+results&days=30',              desc:'Full text search'},
-      {url:'/api/fca/debug',                                            desc:'Test auth + connectivity'},
-    ],
-  },
-
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -880,7 +823,7 @@ function switchMarket(market) {
   edinetCompany = null;
   hideSuggestions();
 
-  ['sgx','asx','edgar','edinet','fca'].forEach(m => {
+  ['sgx','asx','edgar','edinet'].forEach(m => {
     document.getElementById('nav-'+m).classList.toggle('active', m===market);
   });
 
