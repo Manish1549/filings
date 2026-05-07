@@ -149,13 +149,6 @@ async def _poll_sgx(pool, r: aioredis.Redis, companies: list[dict]) -> None:
         logger.warning("SGX imports failed: %s", e)
         return
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            token = await _sgx._get_token(client)
-    except Exception as e:
-        logger.warning("SGX token failed: %s", e)
-        return
-
     now_ms  = int(time.time() * 1000)
     now_str = datetime.now(timezone.utc).strftime("%Y%m%d_235959")
 
@@ -181,27 +174,7 @@ async def _poll_sgx(pool, r: aioredis.Redis, companies: list[dict]) -> None:
             f"&pagestart=0&pagesize=10"
         )
         try:
-            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-                res = await client.get(url, headers={
-                    "authorizationtoken": token, "Accept": "*/*",
-                    "Origin": "https://www.sgx.com", "Referer": "https://www.sgx.com/",
-                    "User-Agent": "Mozilla/5.0",
-                })
-                if res.status_code in (401, 403):
-                    # Token expired — refresh once and retry
-                    _sgx.invalidate_token()
-                    try:
-                        token = await _sgx._get_token(client)
-                        res   = await client.get(url, headers={
-                            "authorizationtoken": token, "Accept": "*/*",
-                            "Origin": "https://www.sgx.com", "Referer": "https://www.sgx.com/",
-                            "User-Agent": "Mozilla/5.0",
-                        })
-                    except Exception:
-                        continue
-                if res.status_code >= 400:
-                    continue
-                data = res.json()
+            data = await _sgx.get(url)
         except Exception as e:
             logger.warning("SGX fetch error for %s: %s", company_name, e)
             continue
@@ -466,87 +439,6 @@ async def _poll_edinet(pool, r: aioredis.Redis, companies: list[dict]) -> None:
             await r.set(key, newest_dt)
 
 
-# ── FCA ────────────────────────────────────────────────────────────────────────
-
-async def _poll_fca(pool, r: aioredis.Redis, companies: list[dict]) -> None:
-    from datetime import datetime, timezone, timedelta
-
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    for company in companies:
-        lookup_key   = company["lookup_key"]
-        company_name = company["name"]
-        ticker       = company.get("ticker")
-        key          = _rkey("fca", lookup_key)
-
-        last_dt = await r.get(key)
-        if last_dt is None:
-            await r.set(key, now_iso)
-            continue
-
-        # Parse last_dt back to date string for FCA query
-        try:
-            last_date = last_dt[:10]  # "YYYY-MM-DD"
-        except Exception:
-            last_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-
-        payload = {
-            "from": 0,
-            "size": 10,
-            "sortorder": "desc",
-            "criteriaObj": {
-                "criteria": [
-                    {"name": "latest_flag", "value": "Y"},
-                    {"name": "company_lei",
-                     "value": [company_name, "", "disclose_org", "related_org"]},
-                    {"name": "source", "value": "NSM"},
-                ],
-                "dateCriteria": [
-                    {"name": "submitted_date",
-                     "value": {"from": f"{last_date}T00:00:00Z", "to": None}},
-                ],
-            },
-        }
-        try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                res = await client.post(FCA_SEARCH_URL, headers=FCA_HEADERS, json=payload)
-                if res.status_code >= 400:
-                    continue
-                hits = res.json().get("hits", {}).get("hits", [])
-        except Exception as e:
-            logger.warning("FCA fetch error for %s: %s", company_name, e)
-            continue
-
-        new_filings = []
-        newest_dt   = last_dt
-
-        for hit in hits:
-            src      = hit.get("_source", {})
-            sub_dt   = src.get("submitted_date", "")
-            if not sub_dt or sub_dt <= last_dt:
-                continue
-            dl = src.get("download_link", "")
-            new_filings.append({
-                "title":           src.get("headline", "Filing"),
-                "category_name":   src.get("type", src.get("category", "")),
-                "submission_date": sub_dt[:16].replace("T", " "),
-                "url":             f"{FCA_ARTEFACTS}{dl}" if dl else "",
-                "_ts":             sub_dt,
-            })
-            if sub_dt > newest_dt:
-                newest_dt = sub_dt
-
-        if not new_filings:
-            continue
-
-        logger.info("FCA: %d new filing(s) for %s", len(new_filings), company_name)
-        ok = await _notify(pool, "fca", lookup_key, company_name, ticker, new_filings)
-        if ok:
-            await r.set(key, newest_dt)
-
-        await asyncio.sleep(0.5)
-
-
 # ── Europe (financialreports.eu) ──────────────────────────────────────────────
 
 async def _poll_europe(pool, r: aioredis.Redis, companies: list[dict]) -> None:
@@ -638,22 +530,21 @@ async def _poll(pool) -> None:
     r = await _get_redis()
 
     # Fetch all watched companies per exchange in parallel DB queries
-    sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos, europe_cos = await asyncio.gather(
+    sgx_cos, asx_cos, edgar_cos, edinet_cos, europe_cos = await asyncio.gather(
         _get_watched(pool, "sgx"),
         _get_watched(pool, "asx"),
         _get_watched(pool, "edgar"),
         _get_watched(pool, "edinet"),
-        _get_watched(pool, "fca"),
         _get_watched(pool, "europe"),
     )
 
-    total = sum(len(x) for x in [sgx_cos, asx_cos, edgar_cos, edinet_cos, fca_cos, europe_cos])
+    total = sum(len(x) for x in [sgx_cos, asx_cos, edgar_cos, edinet_cos, europe_cos])
     if total == 0:
         return
 
     logger.debug(
-        "Poll cycle: SGX=%d ASX=%d EDGAR=%d EDINET=%d FCA=%d Europe=%d",
-        len(sgx_cos), len(asx_cos), len(edgar_cos), len(edinet_cos), len(fca_cos), len(europe_cos),
+        "Poll cycle: SGX=%d ASX=%d EDGAR=%d EDINET=%d Europe=%d",
+        len(sgx_cos), len(asx_cos), len(edgar_cos), len(edinet_cos), len(europe_cos),
     )
 
     # Run all exchange pollers — sequential to avoid hammering APIs simultaneously
@@ -665,8 +556,6 @@ async def _poll(pool) -> None:
         await _poll_edgar(pool, r, edgar_cos)
     if edinet_cos:
         await _poll_edinet(pool, r, edinet_cos)
-    if fca_cos:
-        await _poll_fca(pool, r, fca_cos)
     if europe_cos:
         await _poll_europe(pool, r, europe_cos)
 
@@ -686,7 +575,7 @@ def start_poller(pool) -> None:
         misfire_grace_time=30,
     )
     _scheduler.start()
-    logger.info("Filing poller started — interval=%ds (SGX, ASX, EDGAR, EDINET, FCA)", POLL_INTERVAL)
+    logger.info("Filing poller started — interval=%ds (SGX, ASX, EDGAR, EDINET, Europe)", POLL_INTERVAL)
 
 
 def stop_poller() -> None:
